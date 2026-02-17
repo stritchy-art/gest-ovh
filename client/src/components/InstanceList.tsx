@@ -1,41 +1,84 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import ovhService from '../services/ovhService'
 import InstanceLogs from './InstanceLogs'
 import ScheduleModal from './ScheduleModal'
-import type { OVHConfig, Instance, InstanceSchedule } from '../types'
+import type { Instance, InstanceSchedule } from '../types'
 
-interface InstanceListProps {
-  config: OVHConfig
-}
-
-function InstanceList({ config }: InstanceListProps) {
+function InstanceList() {
   const [instances, setInstances] = useState<Instance[]>([])
+  const [projects, setProjects] = useState<string[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
   const [projectId, setProjectId] = useState<string | null>(null)
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null)
   const [showLogs, setShowLogs] = useState<boolean>(false)
   const [showSchedule, setShowSchedule] = useState<boolean>(false)
+  const [searchTerm, setSearchTerm] = useState<string>('')
+  const [statusFilter, setStatusFilter] = useState<string>('ALL')
+  const [regionFilter, setRegionFilter] = useState<string>('ALL')
+  const [sortBy, setSortBy] = useState<'name' | 'created' | 'status'>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [page, setPage] = useState<number>(1)
+  const [pageSize, setPageSize] = useState<number>(5)
 
   useEffect(() => {
-    loadInstances()
-  }, [config])
+    loadProjects()
+  }, [])
 
-  const loadInstances = async () => {
+  useEffect(() => {
+    if (projectId) {
+      loadInstances(projectId)
+    }
+  }, [projectId])
+
+  const loadProjects = async () => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const projectList = await ovhService.getProjects()
+      if (projectList.length === 0) {
+        throw new Error('Aucun projet trouvé')
+      }
+
+      setProjects(projectList)
+      setProjectId((prev) => prev && projectList.includes(prev) ? prev : projectList[0])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadInstances = async (selectedProjectId: string) => {
     setLoading(true)
     setError(null)
     
     try {
-      const projects = await ovhService.getProjects(config)
-      if (projects.length === 0) {
-        throw new Error('Aucun projet trouvé')
-      }
-      
-      const firstProject = projects[0]
-      setProjectId(firstProject)
-      
-      const instancesData = await ovhService.getInstances(config, firstProject)
-      setInstances(instancesData)
+      const [instancesData, schedules] = await Promise.all([
+        ovhService.getInstances(selectedProjectId),
+        ovhService.getSchedules()
+      ])
+
+      const instancesWithSchedule = instancesData.map((instance) => {
+        const schedule = schedules[instance.id]
+        if (schedule) {
+          return {
+            ...instance,
+            scheduleMode: schedule.enabled ? 'auto' : 'manual',
+            schedule: {
+              startTime: schedule.startTime,
+              stopTime: schedule.stopTime,
+              enabled: schedule.enabled,
+              timezone: schedule.timezone
+            }
+          }
+        }
+        return { ...instance, scheduleMode: 'manual' as const }
+      })
+
+      setInstances(instancesWithSchedule)
+      setPage(1)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue')
     } finally {
@@ -47,8 +90,8 @@ function InstanceList({ config }: InstanceListProps) {
     if (!projectId) return
     
     try {
-      await ovhService.startInstance(config, projectId, instance.id)
-      await loadInstances()
+      await ovhService.startInstance(projectId, instance.id)
+      await loadInstances(projectId)
     } catch (err) {
       alert(`Erreur lors du démarrage: ${err instanceof Error ? err.message : 'Erreur inconnue'}`)
     }
@@ -58,8 +101,8 @@ function InstanceList({ config }: InstanceListProps) {
     if (!projectId) return
     
     try {
-      await ovhService.stopInstance(config, projectId, instance.id)
-      await loadInstances()
+      await ovhService.stopInstance(projectId, instance.id)
+      await loadInstances(projectId)
     } catch (err) {
       alert(`Erreur lors de l'arrêt: ${err instanceof Error ? err.message : 'Erreur inconnue'}`)
     }
@@ -79,10 +122,8 @@ function InstanceList({ config }: InstanceListProps) {
     if (!selectedInstance || !projectId) return
 
     try {
-      // TODO: Appeler l'API backend pour sauvegarder la planification
-      console.log('Saving schedule for', selectedInstance.id, schedule)
+      await ovhService.saveSchedule(selectedInstance.id, projectId, schedule)
 
-      // Mettre à jour l'instance localement
       setInstances(prev => prev.map(inst =>
         inst.id === selectedInstance.id
           ? { ...inst, scheduleMode: schedule.enabled ? 'auto' : 'manual', schedule }
@@ -116,6 +157,49 @@ function InstanceList({ config }: InstanceListProps) {
     return `${day}/${month}/${year} ${hours}:${minutes}`
   }
 
+  useEffect(() => {
+    setPage(1)
+  }, [searchTerm, statusFilter, regionFilter, sortBy, sortDir, pageSize])
+
+  const filteredInstances = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase()
+    return instances.filter((instance) => {
+      const matchTerm = term.length === 0
+        || instance.name.toLowerCase().includes(term)
+        || instance.id.toLowerCase().includes(term)
+
+      const matchStatus = statusFilter === 'ALL' || instance.status === statusFilter
+      const matchRegion = regionFilter === 'ALL' || instance.region === regionFilter
+      return matchTerm && matchStatus && matchRegion
+    })
+  }, [instances, searchTerm, statusFilter, regionFilter])
+
+  const availableRegions = useMemo(() => {
+    return Array.from(new Set(instances.map((instance) => instance.region))).sort()
+  }, [instances])
+
+  const sortedInstances = useMemo(() => {
+    const sorted = [...filteredInstances]
+    sorted.sort((a, b) => {
+      let comparison = 0
+      if (sortBy === 'name') {
+        comparison = a.name.localeCompare(b.name)
+      } else if (sortBy === 'status') {
+        comparison = a.status.localeCompare(b.status)
+      } else {
+        comparison = new Date(a.created).getTime() - new Date(b.created).getTime()
+      }
+      return sortDir === 'asc' ? comparison : -comparison
+    })
+    return sorted
+  }, [filteredInstances, sortBy, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(sortedInstances.length / pageSize))
+  const pagedInstances = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return sortedInstances.slice(start, start + pageSize)
+  }, [sortedInstances, page, pageSize])
+
   if (loading) {
     return (
       <div className="text-center py-5">
@@ -146,20 +230,98 @@ function InstanceList({ config }: InstanceListProps) {
         <p className="text-muted">Gestion de vos instances OVH Cloud Public</p>
       </div>
 
-      <div className="d-flex justify-content-between align-items-center mb-4">
+      <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
         <div className="d-flex align-items-center gap-2">
           <label className="mb-0">Projet:</label>
-          <select className="form-select form-select-sm bg-dark text-light border-secondary" style={{ width: 'auto' }}>
-            <option>{projectId || 'projet-demo-1'}</option>
+          <select
+            className="form-select form-select-sm bg-dark text-light border-secondary"
+            style={{ width: 'auto' }}
+            value={projectId ?? ''}
+            onChange={(e) => setProjectId(e.target.value)}
+          >
+            {projects.map((project) => (
+              <option key={project} value={project}>{project}</option>
+            ))}
           </select>
         </div>
-        <button onClick={loadInstances} className="btn btn-primary btn-sm">
-          <i className="bi bi-arrow-clockwise me-2"></i>
-          Actualiser
-        </button>
+
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          <input
+            type="text"
+            className="form-control form-control-sm bg-dark text-light border-secondary"
+            placeholder="Rechercher par nom ou ID"
+            style={{ width: 220 }}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+
+          <select
+            className="form-select form-select-sm bg-dark text-light border-secondary"
+            style={{ width: 140 }}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="ALL">Tous statuts</option>
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="SHUTOFF">SHUTOFF</option>
+            <option value="BUILDING">BUILDING</option>
+          </select>
+
+          <select
+            className="form-select form-select-sm bg-dark text-light border-secondary"
+            style={{ width: 140 }}
+            value={regionFilter}
+            onChange={(e) => setRegionFilter(e.target.value)}
+          >
+            <option value="ALL">Toutes régions</option>
+            {availableRegions.map((region) => (
+              <option key={region} value={region}>{region}</option>
+            ))}
+          </select>
+
+          <select
+            className="form-select form-select-sm bg-dark text-light border-secondary"
+            style={{ width: 140 }}
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'name' | 'created' | 'status')}
+          >
+            <option value="name">Tri: Nom</option>
+            <option value="created">Tri: Date</option>
+            <option value="status">Tri: Statut</option>
+          </select>
+
+          <select
+            className="form-select form-select-sm bg-dark text-light border-secondary"
+            style={{ width: 120 }}
+            value={sortDir}
+            onChange={(e) => setSortDir(e.target.value as 'asc' | 'desc')}
+          >
+            <option value="asc">Asc</option>
+            <option value="desc">Desc</option>
+          </select>
+
+          <select
+            className="form-select form-select-sm bg-dark text-light border-secondary"
+            style={{ width: 120 }}
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            <option value={5}>5 / page</option>
+            <option value={10}>10 / page</option>
+            <option value={20}>20 / page</option>
+          </select>
+
+          <button
+            onClick={() => projectId && loadInstances(projectId)}
+            className="btn btn-primary btn-sm"
+          >
+            <i className="bi bi-arrow-clockwise me-2"></i>
+            Actualiser
+          </button>
+        </div>
       </div>
 
-      {instances.length === 0 ? (
+      {filteredInstances.length === 0 ? (
         <div className="alert alert-info">
           <i className="bi bi-info-circle-fill me-2"></i>
           Aucune instance trouvée
@@ -200,7 +362,7 @@ function InstanceList({ config }: InstanceListProps) {
               </tr>
             </thead>
             <tbody>
-              {instances.map((instance) => (
+              {pagedInstances.map((instance) => (
                 <tr key={instance.id}>
                   <td>
                     <div className="fw-bold">{instance.name}</div>
@@ -267,6 +429,43 @@ function InstanceList({ config }: InstanceListProps) {
               ))}
             </tbody>
           </table>
+
+          <div className="d-flex justify-content-between align-items-center mt-3">
+            <small className="text-muted">
+              {sortedInstances.length} instance(s) — page {page} / {totalPages}
+            </small>
+
+            <div className="btn-group btn-group-sm" role="group">
+              <button
+                className="btn btn-outline-secondary"
+                onClick={() => setPage(1)}
+                disabled={page === 1}
+              >
+                «
+              </button>
+              <button
+                className="btn btn-outline-secondary"
+                onClick={() => setPage(Math.max(1, page - 1))}
+                disabled={page === 1}
+              >
+                <i className="bi bi-chevron-left"></i>
+              </button>
+              <button
+                className="btn btn-outline-secondary"
+                onClick={() => setPage(Math.min(totalPages, page + 1))}
+                disabled={page === totalPages}
+              >
+                <i className="bi bi-chevron-right"></i>
+              </button>
+              <button
+                className="btn btn-outline-secondary"
+                onClick={() => setPage(totalPages)}
+                disabled={page === totalPages}
+              >
+                »
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -274,7 +473,6 @@ function InstanceList({ config }: InstanceListProps) {
         <>
           <InstanceLogs
             instance={selectedInstance}
-            config={config}
             projectId={projectId!}
             show={showLogs}
             onClose={() => setShowLogs(false)}

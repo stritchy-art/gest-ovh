@@ -1,9 +1,0 @@
-# Configuration exemple pour OVH API
-# Ne jamais commiter ce fichier avec vos vraies credentials!
-
-{
-  "endpoint": "ovh-eu",
-  "appKey": "VOTRE_APPLICATION_KEY",
-  "appSecret": "VOTRE_APPLICATION_SECRET",
-  "consumerKey": "VOTRE_CONSUMER_KEY"
-}

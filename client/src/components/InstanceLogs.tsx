@@ -1,16 +1,15 @@
 import { useState, useEffect } from 'react'
 import ovhService from '../services/ovhService'
-import type { Instance, OVHConfig, LogEntry } from '../types'
+import type { Instance, LogEntry } from '../types'
 
 interface InstanceLogsProps {
   instance: Instance
-  config: OVHConfig
   projectId: string
   show: boolean
   onClose: () => void
 }
 
-function InstanceLogs({ instance, config, projectId, show, onClose }: InstanceLogsProps) {
+function InstanceLogs({ instance, projectId, show, onClose }: InstanceLogsProps) {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
@@ -26,7 +25,7 @@ function InstanceLogs({ instance, config, projectId, show, onClose }: InstanceLo
     setError(null)
     
     try {
-      const logsData = await ovhService.getInstanceLogs(config, projectId, instance.id)
+      const logsData = await ovhService.getInstanceLogs(projectId, instance.id)
       setLogs(logsData)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors du chargement des logs')

@@ -1,8 +1,13 @@
 // Gestionnaire de cron pour la planification automatique des instances
 import cron from 'node-cron'
 import { getSchedules } from '../services/scheduleService.js'
+import { getServerEnvConfig, hasOvhCredentials } from '../config/env.js'
+import { startInstance, stopInstance } from '../services/ovhService.js'
+import { logAction } from '../services/actionLogService.js'
+import { actionCounter } from '../services/metricsService.js'
 
-// Map pour stocker les tâches cron actives
+// Note: activeTasks n'est pas utilisé actuellement mais prêt pour une future implémentation
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const activeTasks = new Map<string, cron.ScheduledTask>()
 
 /**
@@ -26,6 +31,12 @@ async function checkSchedules() {
     const schedules = await getSchedules()
     const now = new Date()
     const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+
+    const envConfig = getServerEnvConfig()
+    if (!hasOvhCredentials(envConfig)) {
+      console.warn('⚠️ OVH credentials manquants côté serveur. Actions planifiées ignorées.')
+      return
+    }
 
     for (const [instanceId, schedule] of Object.entries(schedules)) {
       if (!schedule.enabled) continue
@@ -56,21 +67,35 @@ async function executeScheduledAction(
   action: 'start' | 'stop'
 ) {
   try {
-    // TODO: Implémenter l'appel à l'API OVH
-    // Pour l'instant, on logue juste l'action
     console.log(`🔄 Executing ${action} for instance ${instanceId} in project ${projectId}`)
 
-    // Dans une version complète, on devrait :
-    // 1. Récupérer la config OVH depuis une source sécurisée (variables d'environnement, vault, etc.)
-    // 2. Appeler l'API OVH pour start/stop
-    // 3. Logger le résultat
+    if (action === 'start') {
+      await startInstance(projectId, instanceId)
+    } else {
+      await stopInstance(projectId, instanceId)
+    }
 
-    // Exemple:
-    // const result = await (action === 'start' ? startInstance : stopInstance)(config, projectId, instanceId)
-    // console.log(`✅ ${action} completed:`, result)
-
+    actionCounter.inc({ action, mode: 'auto', status: 'success' })
+    await logAction({
+      timestamp: new Date().toISOString(),
+      action,
+      instanceId,
+      projectId,
+      mode: 'auto',
+      status: 'success'
+    })
   } catch (error) {
     console.error(`❌ Error executing ${action} for instance ${instanceId}:`, error)
+    actionCounter.inc({ action, mode: 'auto', status: 'error' })
+    await logAction({
+      timestamp: new Date().toISOString(),
+      action,
+      instanceId,
+      projectId,
+      mode: 'auto',
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    })
   }
 }
 

@@ -13,9 +13,13 @@
     "dev:server": "cd server && npm run dev",
     "build": "npm run build:client && npm run build:server",
     "build:client": "cd client && npm run build",
-    "build:server": "cd server && npm run build"
+    "build:server": "cd server && npm run build",
+    "test:client": "cd client && npm run test -- --run",
+    "test:server": "cd server && npm run test -- --run",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "@playwright/test": "^1.45.3"
   }
 }

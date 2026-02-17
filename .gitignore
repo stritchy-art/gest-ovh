@@ -32,3 +32,6 @@ config.json
 schedules.json
 logs/
 backups/
+
+# Secrets
+secrets/

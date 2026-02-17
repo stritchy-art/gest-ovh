@@ -1,20 +1,23 @@
 import { useState, useEffect } from 'react'
 import './App.css'
-import OVHConfig from './components/OVHConfig'
 import InstanceList from './components/InstanceList'
-import type { OVHConfig as OVHConfigType } from './types'
 
 function App() {
-  const [config, setConfig] = useState<OVHConfigType | null>(null)
+  const [isTestMode, setIsTestMode] = useState<boolean>(false)
+  const [loading, setLoading] = useState<boolean>(true)
 
   useEffect(() => {
-    if (config) {
-      console.log('Configuration updated:', {
-        endpoint: config.endpoint,
-        testMode: config.testMode
+    // Vérifier le mode de fonctionnement au démarrage
+    fetch('/api/status')
+      .then(res => res.json())
+      .then(data => {
+        setIsTestMode(data.testMode)
+        setLoading(false)
       })
-    }
-  }, [config])
+      .catch(() => {
+        setLoading(false)
+      })
+  }, [])
 
   return (
     <>
@@ -24,16 +27,26 @@ function App() {
             <i className="bi bi-cloud-fill me-2"></i>
             OVH Cloud Manager
           </span>
-          {config?.testMode && (
+          {!loading && isTestMode && (
             <span className="badge bg-warning text-dark">
               <i className="bi bi-flask me-1"></i>
-              Mode Test
+              Mode Test - Credentials OVH non configurées
             </span>
           )}
         </div>
       </nav>
 
       <div className="container-fluid">
+        {!loading && isTestMode && (
+          <div className="alert alert-warning" role="alert">
+            <i className="bi bi-exclamation-triangle-fill me-2"></i>
+            <strong>Mode Test activé</strong> - Les credentials OVH ne sont pas configurées côté serveur. 
+            Vous visualisez des données simulées. Pour utiliser vos vraies instances OVH, configurez les 
+            variables d'environnement <code>OVH_APP_KEY</code>, <code>OVH_APP_SECRET</code> et <code>OVH_CONSUMER_KEY</code> 
+            dans le fichier <code>.env</code> du serveur.
+          </div>
+        )}
+        
         <nav aria-label="breadcrumb" className="mb-3">
           <ol className="breadcrumb breadcrumb-dark mb-0">
             <li className="breadcrumb-item">
@@ -41,16 +54,12 @@ function App() {
               Accueil
             </li>
             <li className="breadcrumb-item active" aria-current="page">
-              {!config ? 'Configuration' : 'Instances'}
+              Instances
             </li>
           </ol>
         </nav>
 
-        {!config ? (
-          <OVHConfig onConfigSubmit={setConfig} />
-        ) : (
-          <InstanceList config={config} />
-        )}
+        <InstanceList />
       </div>
     </>
   )

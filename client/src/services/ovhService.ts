@@ -1,98 +1,62 @@
-// Service pour interagir avec l'API OVH
-// Utilise la couche d'abstraction apiClient pour gérer les appels réels ou mockés
-
-import { createApiClient, type IApiClient } from './apiClient'
-import type { OVHConfig, Instance, LogEntry, StartStopResponse } from '../types'
+// Service pour interagir avec l'API backend
+import type { Instance, LogEntry, StartStopResponse, InstanceSchedule } from '../types'
 
 class OVHService {
-  private client: IApiClient | null = null
+  private apiBase = import.meta.env.VITE_API_BASE_URL ?? ''
 
-  /**
-   * Initialise le client API avec la configuration fournie
-   */
-  initialize(config: OVHConfig): void {
-    this.client = createApiClient(config)
+  private async post<T>(path: string, body?: unknown): Promise<T> {
+    const response = await fetch(`${this.apiBase}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(errorText || `HTTP ${response.status}`)
+    }
+
+    return response.json()
   }
 
-  /**
-   * Vérifie que le client est initialisé
-   */
-  private ensureInitialized(): void {
-    if (!this.client) {
-      throw new Error('Service OVH non initialisé. Appelez initialize() d\'abord.')
+  private async get<T>(path: string): Promise<T> {
+    const response = await fetch(`${this.apiBase}${path}`)
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(errorText || `HTTP ${response.status}`)
     }
+
+    return response.json()
   }
 
-  /**
-   * Récupère la liste des projets cloud
-   */
-  async getProjects(config: OVHConfig): Promise<string[]> {
-    this.initialize(config)
-    this.ensureInitialized()
-    try {
-      return await this.client!.get<string[]>('/cloud/project')
-    } catch (error) {
-      console.error('Error fetching projects:', error)
-      throw error
-    }
+  async getProjects(): Promise<string[]> {
+    return this.post<string[]>('/api/projects/list')
   }
 
-  /**
-   * Récupère la liste des instances d'un projet
-   */
-  async getInstances(config: OVHConfig, projectId: string): Promise<Instance[]> {
-    this.initialize(config)
-    this.ensureInitialized()
-    try {
-      return await this.client!.get<Instance[]>(`/cloud/project/${projectId}/instance`)
-    } catch (error) {
-      console.error('Error fetching instances:', error)
-      throw error
-    }
+  async getInstances(projectId: string): Promise<Instance[]> {
+    return this.post<Instance[]>('/api/instances/list', { projectId })
   }
 
-  /**
-   * Démarre une instance
-   */
-  async startInstance(config: OVHConfig, projectId: string, instanceId: string): Promise<StartStopResponse> {
-    this.initialize(config)
-    this.ensureInitialized()
-    try {
-      return await this.client!.post<StartStopResponse>(`/cloud/project/${projectId}/instance/${instanceId}/start`)
-    } catch (error) {
-      console.error('Error starting instance:', error)
-      throw error
-    }
+  async startInstance(projectId: string, instanceId: string): Promise<StartStopResponse> {
+    return this.post<StartStopResponse>('/api/instances/start', { projectId, instanceId })
   }
 
-  /**
-   * Arrête une instance
-   */
-  async stopInstance(config: OVHConfig, projectId: string, instanceId: string): Promise<StartStopResponse> {
-    this.initialize(config)
-    this.ensureInitialized()
-    try {
-      return await this.client!.post<StartStopResponse>(`/cloud/project/${projectId}/instance/${instanceId}/stop`)
-    } catch (error) {
-      console.error('Error stopping instance:', error)
-      throw error
-    }
+  async stopInstance(projectId: string, instanceId: string): Promise<StartStopResponse> {
+    return this.post<StartStopResponse>('/api/instances/stop', { projectId, instanceId })
   }
 
-  /**
-   * Récupère les logs d'une instance
-   */
-  async getInstanceLogs(config: OVHConfig, projectId: string, instanceId: string): Promise<LogEntry[]> {
-    this.initialize(config)
-    this.ensureInitialized()
-    try {
-      return await this.client!.get<LogEntry[]>(`/cloud/project/${projectId}/instance/${instanceId}/vnc`)
-    } catch (error) {
-      console.error('Error fetching instance logs:', error)
-      throw error
-    }
+  async getInstanceLogs(projectId: string, instanceId: string): Promise<LogEntry[]> {
+    return this.post<LogEntry[]>('/api/instances/logs', { projectId, instanceId })
+  }
+
+  async getSchedules(): Promise<Record<string, { instanceId: string; projectId: string; startTime: string; stopTime: string; enabled: boolean; timezone: string }>> {
+    return this.get('/api/schedules')
+  }
+
+  async saveSchedule(instanceId: string, projectId: string, schedule: InstanceSchedule) {
+    return this.post('/api/schedules', { instanceId, projectId, schedule })
   }
 }
 
-// Export une instance unique du service
 export default new OVHService()

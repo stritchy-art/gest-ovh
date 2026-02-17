@@ -13,16 +13,32 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
+      - REDIS_URL=redis://redis:6379
+      - ACTION_LOG_RETENTION=${ACTION_LOG_RETENTION:-500}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - MAIL_FROM=${MAIL_FROM}
+      - MAIL_TO=${MAIL_TO}
       # Variables OVH API (à configurer via .env)
       - OVH_ENDPOINT=${OVH_ENDPOINT:-ovh-eu}
       - OVH_APP_KEY=${OVH_APP_KEY}
       - OVH_APP_SECRET=${OVH_APP_SECRET}
       - OVH_CONSUMER_KEY=${OVH_CONSUMER_KEY}
+      - OVH_APP_KEY_FILE=/run/secrets/ovh_app_key
+      - OVH_APP_SECRET_FILE=/run/secrets/ovh_app_secret
+      - OVH_CONSUMER_KEY_FILE=/run/secrets/ovh_consumer_key
     volumes:
       # Persister les planifications
       - ./schedules.json:/app/schedules.json
       # Logs (optionnel)
       - ./logs:/app/logs
+    secrets:
+      - ovh_app_key
+      - ovh_app_secret
+      - ovh_consumer_key
     networks:
       - ovh-network
     healthcheck:
@@ -51,6 +67,18 @@ services:
       timeout: 10s
       retries: 3
 
+  # Redis pour stockage des planifications et logs
+  redis:
+    image: redis:7-alpine
+    container_name: ovh-manager-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - ovh-network
+
 networks:
   ovh-network:
     driver: bridge
@@ -59,3 +87,13 @@ networks:
 volumes:
   schedules-data:
     driver: local
+  redis-data:
+    driver: local
+
+secrets:
+  ovh_app_key:
+    file: ./secrets/ovh_app_key.txt
+  ovh_app_secret:
+    file: ./secrets/ovh_app_secret.txt
+  ovh_consumer_key:
+    file: ./secrets/ovh_consumer_key.txt

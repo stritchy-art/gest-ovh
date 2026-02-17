@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { getSchedules, saveSchedule, deleteSchedule } from '../services/scheduleService'
+import { getSchedules, saveSchedule, deleteSchedule } from '../services/scheduleService.js'
 import type { ScheduleUpdate } from '../types/index.js'
 
 const router = Router()

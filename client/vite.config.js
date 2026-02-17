@@ -6,5 +6,14 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     extensions: ['.ts', '.tsx', '.js', '.jsx']
+  },
+  server: {
+    proxy: {
+      '/api': 'http://localhost:3001'
+    }
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/setupTests.ts'
   }
 })

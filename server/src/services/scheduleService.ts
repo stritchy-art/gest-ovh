@@ -1,9 +1,11 @@
 // Service de gestion des planifications (stockage en fichier JSON)
 import fs from 'fs/promises'
 import path from 'path'
-import type { ScheduleConfig, ScheduleUpdate } from '../types/index.js'
+import type { ScheduleUpdate } from '../types/index.js'
+import { getRedisClient } from './redisClient.js'
 
 const SCHEDULES_FILE = path.join(process.cwd(), 'schedules.json')
+const REDIS_HASH_KEY = 'schedules'
 
 interface ScheduleData {
   instanceId: string
@@ -18,11 +20,20 @@ interface ScheduleData {
  * Charge les planifications depuis le fichier
  */
 export async function getSchedules(): Promise<Record<string, ScheduleData>> {
+  const client = await getRedisClient()
+  if (client) {
+    const data = await client.hGetAll(REDIS_HASH_KEY)
+    const result: Record<string, ScheduleData> = {}
+    for (const [key, value] of Object.entries(data)) {
+      result[key] = JSON.parse(value)
+    }
+    return result
+  }
+
   try {
     const data = await fs.readFile(SCHEDULES_FILE, 'utf-8')
     return JSON.parse(data)
   } catch (error) {
-    // Si le fichier n'existe pas, retourner un objet vide
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return {}
     }
@@ -51,7 +62,12 @@ export async function saveSchedule(data: {
 
   schedules[data.instanceId] = scheduleData
 
-  await fs.writeFile(SCHEDULES_FILE, JSON.stringify(schedules, null, 2), 'utf-8')
+  const client = await getRedisClient()
+  if (client) {
+    await client.hSet(REDIS_HASH_KEY, data.instanceId, JSON.stringify(scheduleData))
+  } else {
+    await fs.writeFile(SCHEDULES_FILE, JSON.stringify(schedules, null, 2), 'utf-8')
+  }
 
   console.log(`✅ Schedule saved for instance ${data.instanceId}:`, scheduleData)
 
@@ -66,7 +82,14 @@ export async function deleteSchedule(instanceId: string): Promise<void> {
 
   if (schedules[instanceId]) {
     delete schedules[instanceId]
-    await fs.writeFile(SCHEDULES_FILE, JSON.stringify(schedules, null, 2), 'utf-8')
+
+    const client = await getRedisClient()
+    if (client) {
+      await client.hDel(REDIS_HASH_KEY, instanceId)
+    } else {
+      await fs.writeFile(SCHEDULES_FILE, JSON.stringify(schedules, null, 2), 'utf-8')
+    }
+
     console.log(`🗑️ Schedule deleted for instance ${instanceId}`)
   }
 }

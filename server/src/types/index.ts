@@ -1,13 +1,5 @@
 // Types partagés entre client et server
 
-export interface OVHConfig {
-  endpoint: 'ovh-eu' | 'ovh-us' | 'ovh-ca'
-  appKey: string
-  appSecret: string
-  consumerKey: string
-  testMode?: boolean
-}
-
 export interface Instance {
   id: string
   name: string
