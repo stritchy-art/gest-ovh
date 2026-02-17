@@ -1,0 +1,80 @@
+// Service de gestion des planifications (stockage en fichier JSON)
+import fs from 'fs/promises'
+import path from 'path'
+import type { ScheduleConfig, ScheduleUpdate } from '../types/index.js'
+
+const SCHEDULES_FILE = path.join(process.cwd(), 'schedules.json')
+
+interface ScheduleData {
+  instanceId: string
+  projectId: string
+  startTime: string
+  stopTime: string
+  enabled: boolean
+  timezone: string
+}
+
+/**
+ * Charge les planifications depuis le fichier
+ */
+export async function getSchedules(): Promise<Record<string, ScheduleData>> {
+  try {
+    const data = await fs.readFile(SCHEDULES_FILE, 'utf-8')
+    return JSON.parse(data)
+  } catch (error) {
+    // Si le fichier n'existe pas, retourner un objet vide
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {}
+    }
+    throw error
+  }
+}
+
+/**
+ * Sauvegarde une planification
+ */
+export async function saveSchedule(data: {
+  instanceId: string
+  projectId: string
+  schedule: ScheduleUpdate['schedule']
+}): Promise<ScheduleData> {
+  const schedules = await getSchedules()
+
+  const scheduleData: ScheduleData = {
+    instanceId: data.instanceId,
+    projectId: data.projectId,
+    startTime: data.schedule.startTime,
+    stopTime: data.schedule.stopTime,
+    enabled: data.schedule.enabled,
+    timezone: data.schedule.timezone || 'Europe/Paris'
+  }
+
+  schedules[data.instanceId] = scheduleData
+
+  await fs.writeFile(SCHEDULES_FILE, JSON.stringify(schedules, null, 2), 'utf-8')
+
+  console.log(`✅ Schedule saved for instance ${data.instanceId}:`, scheduleData)
+
+  return scheduleData
+}
+
+/**
+ * Supprime une planification
+ */
+export async function deleteSchedule(instanceId: string): Promise<void> {
+  const schedules = await getSchedules()
+
+  if (schedules[instanceId]) {
+    delete schedules[instanceId]
+    await fs.writeFile(SCHEDULES_FILE, JSON.stringify(schedules, null, 2), 'utf-8')
+    console.log(`🗑️ Schedule deleted for instance ${instanceId}`)
+  }
+}
+
+/**
+ * Récupère une planification spécifique
+ */
+export async function getSchedule(instanceId: string): Promise<ScheduleData | null> {
+  const schedules = await getSchedules()
+  return schedules[instanceId] || null
+}

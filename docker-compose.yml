@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # Backend Node.js + Express
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: ovh-manager-server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      # Variables OVH API (à configurer via .env)
+      - OVH_ENDPOINT=${OVH_ENDPOINT:-ovh-eu}
+      - OVH_APP_KEY=${OVH_APP_KEY}
+      - OVH_APP_SECRET=${OVH_APP_SECRET}
+      - OVH_CONSUMER_KEY=${OVH_CONSUMER_KEY}
+    volumes:
+      # Persister les planifications
+      - ./schedules.json:/app/schedules.json
+      # Logs (optionnel)
+      - ./logs:/app/logs
+    networks:
+      - ovh-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend React + Nginx
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: ovh-manager-client
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    networks:
+      - ovh-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  ovh-network:
+    driver: bridge
+
+# Volumes nommés (optionnel, pour persistance avancée)
+volumes:
+  schedules-data:
+    driver: local

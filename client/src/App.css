@@ -1,0 +1,68 @@
+.App {
+  min-height: 100vh;
+  background-color: #0f0f0f;
+}
+
+.bg-gradient {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.log-viewer {
+  max-height: 60vh;
+  overflow-y: auto;
+  background: #0a0a0a;
+}
+
+.log-viewer table {
+  font-size: 0.875rem;
+}
+
+.font-monospace {
+  font-family: 'Courier New', monospace !important;
+}
+
+/* Amélioration du thème sombre Bootstrap */
+.table-dark {
+  --bs-table-bg: #18181b;
+  --bs-table-striped-bg: #1a1a1f;
+  --bs-table-hover-bg: #1f1f24;
+  border-color: #27272a;
+}
+
+.form-select,
+.form-control {
+  transition: all 0.2s;
+}
+
+.form-select:focus,
+.form-control:focus {
+  box-shadow: 0 0 0 0.25rem rgba(102, 126, 234, 0.25);
+}
+
+.card {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+}
+
+.btn-group-sm > .btn {
+  white-space: nowrap;
+}
+
+/* Scrollbar personnalisée */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #18181b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
