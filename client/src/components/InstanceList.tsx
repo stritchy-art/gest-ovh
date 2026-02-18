@@ -60,12 +60,12 @@ function InstanceList() {
         ovhService.getSchedules()
       ])
 
-      const instancesWithSchedule = instancesData.map((instance) => {
+      const instancesWithSchedule: Instance[] = instancesData.map((instance) => {
         const schedule = schedules[instance.id]
         if (schedule) {
           return {
             ...instance,
-            scheduleMode: schedule.enabled ? 'auto' : 'manual',
+            scheduleMode: 'auto' as const,
             schedule: {
               startTime: schedule.startTime,
               stopTime: schedule.stopTime,
