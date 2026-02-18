@@ -2,6 +2,7 @@
 import { createRequire } from 'node:module'
 import type { Instance, LogEntry, StartStopResponse } from '../types/index.js'
 import { getServerEnvConfig } from '../config/env.js'
+import { logger } from './logger.js'
 
 const require = createRequire(import.meta.url)
 const ovh = require('ovh')
@@ -10,7 +11,11 @@ import { getMockInstances, getMockLogs, simulateDelay } from './mockService.js'
 // Mode test activé si les credentials sont manquantes
 function isTestMode(): boolean {
   const config = getServerEnvConfig()
-  return !config.ovhAppKey || !config.ovhAppSecret || !config.ovhConsumerKey
+  const testMode = !config.ovhAppKey || !config.ovhAppSecret || !config.ovhConsumerKey
+  if (testMode) {
+    logger.debug('OVH', 'Mode test activé - Credentials manquantes')
+  }
+  return testMode
 }
 
 // Créer le client OVH avec les credentials du serveur
@@ -21,8 +26,40 @@ function createOVHClient() {
     endpoint: config.ovhEndpoint,
     appKey: config.ovhAppKey,
     appSecret: config.ovhAppSecret,
-    consumerKey: config.ovhConsumerKey
+    consumerKey: config.ovhConsumerKey,
+    timeout: 10000 // 10 secondes max
   })
+}
+
+// Wrapper avec timeout global pour éviter les appels bloquants
+async function withTimeout<T>(promise: Promise<T>, ms = 15000): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('Request timeout')), ms)
+  )
+  return Promise.race([promise, timeout])
+}
+
+// Wrapper pour appels API avec logging automatique
+async function apiCall<T>(method: string, path: string, params?: unknown): Promise<T> {
+  const client = createOVHClient()
+  const startTime = Date.now()
+  
+  logger.api.request(method, path, params)
+  
+  try {
+    const result = await withTimeout(
+      params 
+        ? client.requestPromised(method, path, params)
+        : client.requestPromised(method, path)
+    ) as T
+    const duration = Date.now() - startTime
+    logger.api.response(method, path, result, duration)
+    return result
+  } catch (error) {
+    const duration = Date.now() - startTime
+    logger.api.error(method, path, error, duration)
+    throw error
+  }
 }
 
 /**
@@ -31,19 +68,43 @@ function createOVHClient() {
 export async function getProjects(): Promise<string[]> {
   // Mode test
   if (isTestMode()) {
-    console.log('🧪 Mode Test - getProjects')
+    logger.info('OVH', 'Mode Test - getProjects')
     return ['projet-demo-1', 'projet-demo-2']
   }
 
   // Mode production
-  const client = createOVHClient()
-
   try {
-    const projects = await client.requestPromised('GET', '/cloud/project')
+    const projects = await apiCall<string[]>('GET', '/cloud/project')
+    logger.info('OVH', `${projects.length} projets récupérés`)
     return projects
   } catch (error) {
-    console.error('OVH API Error:', error)
+    logger.error('OVH', 'Erreur getProjects', error)
+    // Retour en mode test si erreur d'authentification
+    if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('Invalid'))) {
+      logger.warn('OVH', 'Erreur authentification - Passage en mode test')
+      return ['projet-demo-1', 'projet-demo-2']
+    }
     throw error
+  }
+}
+
+/**
+ * Récupère les détails d'un projet
+ */
+export async function getProjectDetails(projectId: string): Promise<{ id: string; description: string } | null> {
+  if (isTestMode()) {
+    return { id: projectId, description: `Projet ${projectId}` }
+  }
+  
+  try {
+    const project = await apiCall<any>('GET', `/cloud/project/${projectId}`)
+    return {
+      id: projectId,
+      description: project.description || project.projectName || projectId
+    }
+  } catch (error) {
+    logger.warn('OVH', `Erreur récupération détails projet ${projectId}`, error)
+    return { id: projectId, description: projectId }
   }
 }
 
@@ -53,18 +114,51 @@ export async function getProjects(): Promise<string[]> {
 export async function getInstances(projectId: string): Promise<Instance[]> {
   // Mode test
   if (isTestMode()) {
-    console.log('🧪 Mode Test - getInstances')
+    logger.info('OVH', 'Mode Test - getInstances')
     return getMockInstances()
   }
 
   // Mode production
-  const client = createOVHClient()
-
   try {
-    const instances = await client.requestPromised('GET', `/cloud/project/${projectId}/instance`)
-    return instances
+    const instances = await apiCall<Instance[]>('GET', `/cloud/project/${projectId}/instance`)
+    logger.info('OVH', `${instances.length} instances récupérées pour projet ${projectId}`)
+    
+    // Enrichir avec les infos flavor et image (en parallèle)
+    const enrichedInstances = await Promise.all(
+      instances.map(async (instance) => {
+        const [flavorInfo, imageInfo] = await Promise.all([
+          getFlavor(projectId, instance.flavorId).catch(() => null),
+          getImage(projectId, instance.imageId).catch(() => null)
+        ])
+        
+        // Calcul du coût mensuel (prix horaire * 730h)
+        const monthlyCost = flavorInfo?.pricePerHour ? (flavorInfo.pricePerHour * 730).toFixed(2) : undefined
+        const outgoingTraffic =
+          'currentMonthOutgoingTraffic' in instance
+            ? (instance as { currentMonthOutgoingTraffic?: number }).currentMonthOutgoingTraffic ?? 0
+            : 0
+        
+        return {
+          ...instance,
+          flavorName: flavorInfo?.name,
+          vcpus: flavorInfo?.vcpus,
+          ram: flavorInfo?.ram,
+          disk: flavorInfo?.disk,
+          monthlyCost: monthlyCost,
+          imageName: imageInfo?.name,
+          imageType: imageInfo?.type,
+          outgoingTraffic: outgoingTraffic
+        }
+      })
+    )
+    
+    return enrichedInstances
   } catch (error) {
-    console.error('OVH API Error:', error)
+    logger.error('OVH', `Erreur getInstances projet ${projectId}`, error)
+    if (error instanceof Error && error.message.includes('timeout')) {
+      logger.warn('OVH', 'Timeout - Retour données mock')
+      return getMockInstances()
+    }
     throw error
   }
 }
@@ -76,21 +170,22 @@ export async function startInstance(
   projectId: string,
   instanceId: string
 ): Promise<StartStopResponse> {
+  logger.action.start(instanceId, projectId, 'manual')
+  
   // Mode test
   if (isTestMode()) {
-    console.log('🧪 Mode Test - startInstance')
+    logger.info('OVH', 'Mode Test - startInstance')
     await simulateDelay(1000, 2000)
     return { status: 'Instance starting' }
   }
 
   // Mode production
-  const client = createOVHClient()
-
   try {
-    const result = await client.requestPromised('POST', `/cloud/project/${projectId}/instance/${instanceId}/start`)
+    const result = await apiCall<StartStopResponse>('POST', `/cloud/project/${projectId}/instance/${instanceId}/start`)
+    logger.action.success('start', instanceId)
     return result
   } catch (error) {
-    console.error('OVH API Error:', error)
+    logger.action.failure('start', instanceId, error)
     throw error
   }
 }
@@ -102,27 +197,28 @@ export async function stopInstance(
   projectId: string,
   instanceId: string
 ): Promise<StartStopResponse> {
+  logger.action.stop(instanceId, projectId, 'manual')
+  
   // Mode test
   if (isTestMode()) {
-    console.log('🧪 Mode Test - stopInstance')
+    logger.info('OVH', 'Mode Test - stopInstance')
     await simulateDelay(1000, 2000)
     return { status: 'Instance stopping' }
   }
 
   // Mode production
-  const client = createOVHClient()
-
   try {
-    const result = await client.requestPromised('POST', `/cloud/project/${projectId}/instance/${instanceId}/stop`)
+    const result = await apiCall<StartStopResponse>('POST', `/cloud/project/${projectId}/instance/${instanceId}/stop`)
+    logger.action.success('stop', instanceId)
     return result
   } catch (error) {
-    console.error('OVH API Error:', error)
+    logger.action.failure('stop', instanceId, error)
     throw error
   }
 }
 
 /**
- * Récupère les logs d'une instance
+ * Récupère les logs d'actions pour une instance (start/stop)
  */
 export async function getInstanceLogs(
   projectId: string,
@@ -130,18 +226,176 @@ export async function getInstanceLogs(
 ): Promise<LogEntry[]> {
   // Mode test
   if (isTestMode()) {
-    console.log('🧪 Mode Test - getInstanceLogs')
+    logger.info('OVH', 'Mode Test - getInstanceLogs')
     return getMockLogs()
   }
 
-  // Mode production
-  const client = createOVHClient()
+  // En production, on retourne les logs d'actions depuis notre système
+  // plutôt que d'essayer d'accéder aux logs console OVH qui nécessitent
+  // une configuration VNC/console plus complexe
+  const { getActionLogs } = await import('./actionLogService.js')
+  const allLogs = await getActionLogs(500)
+  
+  // Filtrer uniquement les logs pour cette instance
+  const instanceLogs = allLogs
+    .filter(log => log.instanceId === instanceId)
+    .map(log => ({
+      timestamp: log.timestamp,
+      message: `${log.action.toUpperCase()} - ${log.status} - ${log.message || ''}`
+    }))
+  
+  logger.info('OVH', `${instanceLogs.length} logs d'actions pour instance ${instanceId}`)
+  return instanceLogs
+}
 
+/**
+ * Récupère les détails d'un flavor
+ */
+async function getFlavor(projectId: string, flavorId: string): Promise<{ name: string; vcpus: number; ram: number; disk: number; pricePerHour: number } | null> {
+  if (isTestMode()) return null
+  
   try {
-    const logs = await client.requestPromised('GET', `/cloud/project/${projectId}/instance/${instanceId}/vnc`)
-    return logs
+    const flavor = await apiCall<any>('GET', `/cloud/project/${projectId}/flavor/${flavorId}`)
+    logger.info('OVH', `Flavor complet pour ${flavorId}:`, {
+      name: flavor.name,
+      vcpus: flavor.vcpus,
+      ram: flavor.ram,
+      disk: flavor.disk,
+      osType: flavor.osType,
+      type: flavor.type,
+      planCodes: flavor.planCodes,
+      fullFlavor: flavor
+    })
+    return {
+      name: flavor.name || flavorId,
+      vcpus: flavor.vcpus || 0,
+      ram: flavor.ram || 0, // En GB (pas MB!)
+      disk: flavor.disk || 0,
+      pricePerHour: flavor.planCodes?.hourly?.price || 0
+    }
   } catch (error) {
-    console.error('OVH API Error:', error)
-    throw error
+    logger.warn('OVH', `Erreur récupération flavor ${flavorId}`, error)
+    return null
+  }
+}
+
+/**
+ * Récupère les détails d'une image
+ */
+async function getImage(projectId: string, imageId: string): Promise<{ name: string; type: string } | null> {
+  if (isTestMode()) return null
+  
+  try {
+    const image = await apiCall<any>('GET', `/cloud/project/${projectId}/image/${imageId}`)
+    return {
+      name: image.name || imageId,
+      type: image.type || 'linux'
+    }
+  } catch (error) {
+    logger.warn('OVH', `Erreur récupération image ${imageId}`, error)
+    return null
+  }
+}
+
+/**
+ * Récupère les métriques de monitoring d'une instance (CPU, RAM, disque)
+ * Note: L'API OVH Cloud Public ne propose pas d'endpoint /monitoring direct.
+ * Les métriques sont accessibles via d'autres moyens (monitoring externe, agent, etc.)
+ */
+export async function getInstanceMonitoring(projectId: string, instanceId: string): Promise<any | null> {
+  if (isTestMode()) {
+    // Données mockées pour les métriques
+    return {
+      cpu: [
+        { timestamp: Date.now() - 3600000, value: 25.5 },
+        { timestamp: Date.now() - 1800000, value: 45.2 },
+        { timestamp: Date.now(), value: 32.8 }
+      ],
+      memory: [
+        { timestamp: Date.now() - 3600000, value: 2048 },
+        { timestamp: Date.now() - 1800000, value: 3072 },
+        { timestamp: Date.now(), value: 2560 }
+      ],
+      disk: [
+        { timestamp: Date.now() - 3600000, value: 15.5 },
+        { timestamp: Date.now() - 1800000, value: 16.2 },
+        { timestamp: Date.now(), value: 16.8 }
+      ]
+    }
+  }
+  
+  // L'endpoint /monitoring n'existe pas dans l'API OVH Cloud Public
+  // Pour obtenir des métriques, il faudrait utiliser:
+  // - Un agent de monitoring installé sur l'instance (Prometheus, etc.)
+  // - Les services OVH Metrics Data Platform
+  // - Une solution externe
+  logger.debug('OVH', `Monitoring non disponible via API pour instance ${instanceId}`)
+  return null
+}
+
+/**
+ * Récupère les metadata d'une instance
+ * Note: L'API OVH Cloud Public ne propose pas d'endpoint /metadata direct.
+ * Les metadata OpenStack sont accessibles depuis l'instance elle-même via http://169.254.169.254/
+ */
+export async function getInstanceMetadata(projectId: string, instanceId: string): Promise<Record<string, string> | null> {
+  if (isTestMode()) {
+    return {
+      'created-by': 'admin',
+      'environment': 'production',
+      'version': '1.0.0'
+    }
+  }
+  
+  // L'endpoint /metadata n'existe pas dans l'API OVH Cloud Public
+  // Les metadata sont accessibles:
+  // - Depuis l'instance via le service de metadata OpenStack (169.254.169.254)
+  // - Pas directement via l'API OVH
+  logger.debug('OVH', `Metadata non disponibles via API pour instance ${instanceId}`)
+  return null
+}
+
+/**
+ * Récupère la liste des clés SSH d'un projet
+ */
+export async function getProjectSSHKeys(projectId: string): Promise<any[]> {
+  if (isTestMode()) {
+    return [
+      {
+        id: 'key-1',
+        name: 'admin-key',
+        publicKey: 'ssh-rsa AAAAB3NzaC1yc2E... admin@example.com',
+        fingerprint: '2048 SHA256:abcd1234... admin@example.com (RSA)',
+        regions: ['GRA11', 'SBG5']
+      }
+    ]
+  }
+  
+  try {
+    logger.debug('OVH', `Récupération liste clés SSH pour projet ${projectId}`)
+    const keys = await apiCall<any[]>('GET', `/cloud/project/${projectId}/sshkey`)
+    logger.info('OVH', `${keys.length} clé(s) SSH trouvée(s) pour projet ${projectId}`)
+    
+    if (keys.length === 0) {
+      return []
+    }
+    
+    // L'API renvoie directement les objets complets, pas besoin d'appels supplémentaires
+    logger.debug('OVH', 'Première clé SSH:', keys[0])
+    
+    // Normaliser le format
+    const normalizedKeys = keys.map(key => ({
+      id: key.id || key.name,
+      name: key.name || key.id,
+      publicKey: key.publicKey || '',
+      fingerprint: key.fingerPrint || key.fingerprint,
+      regions: key.regions || []
+    }))
+    
+    logger.info('OVH', `${normalizedKeys.length} clés SSH complètes récupérées pour projet ${projectId}`)
+    return normalizedKeys
+  } catch (error) {
+    logger.error('OVH', `Erreur récupération clés SSH projet ${projectId}`, error)
+    return []
   }
 }

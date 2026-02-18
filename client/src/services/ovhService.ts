@@ -1,5 +1,5 @@
 // Service pour interagir avec l'API backend
-import type { Instance, LogEntry, StartStopResponse, InstanceSchedule } from '../types'
+import type { Instance, LogEntry, StartStopResponse, InstanceSchedule, InstanceMonitoring, SSHKey, Project } from '../types'
 
 class OVHService {
   private apiBase = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -19,19 +19,34 @@ class OVHService {
     return response.json()
   }
 
-  private async get<T>(path: string): Promise<T> {
-    const response = await fetch(`${this.apiBase}${path}`)
+  private async get<T>(path: string, timeout = 5000): Promise<T> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
+    
+    try {
+      const response = await fetch(`${this.apiBase}${path}`, {
+        signal: controller.signal
+      })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || `HTTP ${response.status}`)
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || `HTTP ${response.status}`)
+      }
+
+      return response.json()
+    } catch (error) {
+      clearTimeout(timeoutId)
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Request timeout (${timeout}ms)`)
+      }
+      throw error
     }
-
-    return response.json()
   }
 
-  async getProjects(): Promise<string[]> {
-    return this.post<string[]>('/api/projects/list')
+  async getProjects(): Promise<Project[]> {
+    return this.post<Project[]>('/api/projects/list')
   }
 
   async getInstances(projectId: string): Promise<Instance[]> {
@@ -48,6 +63,18 @@ class OVHService {
 
   async getInstanceLogs(projectId: string, instanceId: string): Promise<LogEntry[]> {
     return this.post<LogEntry[]>('/api/instances/logs', { projectId, instanceId })
+  }
+
+  async getInstanceMonitoring(projectId: string, instanceId: string): Promise<InstanceMonitoring | null> {
+    return this.post<InstanceMonitoring | null>('/api/instances/monitoring', { projectId, instanceId })
+  }
+
+  async getInstanceMetadata(projectId: string, instanceId: string): Promise<Record<string, string> | null> {
+    return this.post<Record<string, string> | null>('/api/instances/metadata', { projectId, instanceId })
+  }
+
+  async getProjectSSHKeys(projectId: string): Promise<SSHKey[]> {
+    return this.post<SSHKey[]>('/api/projects/sshkeys', { projectId })
   }
 
   async getSchedules(): Promise<Record<string, { instanceId: string; projectId: string; startTime: string; stopTime: string; enabled: boolean; timezone: string }>> {

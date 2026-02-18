@@ -1,5 +1,10 @@
 // Types pour les données OVH
 
+export interface Project {
+  id: string
+  description: string
+}
+
 export interface Instance {
   id: string
   name: string
@@ -8,9 +13,41 @@ export interface Instance {
   region: string
   ipAddresses?: IPAddress[]
   created: string
+  // Infos enrichies
+  flavorName?: string
+  vcpus?: number
+  ram?: number // En GB
+  disk?: number // En GB
+  monthlyCost?: string // En euros
+  imageName?: string
+  imageType?: string
+  outgoingTraffic?: number // En bytes
   // Ajout pour la planification
   scheduleMode?: 'manual' | 'auto'
   schedule?: InstanceSchedule
+  // Métriques et monitoring
+  monitoring?: InstanceMonitoring
+  metadata?: Record<string, string>
+  sshKeys?: SSHKey[]
+}
+
+export interface InstanceMonitoring {
+  cpu?: MetricData[]
+  memory?: MetricData[]
+  disk?: MetricData[]
+}
+
+export interface MetricData {
+  timestamp: number
+  value: number
+}
+
+export interface SSHKey {
+  id: string
+  name: string
+  publicKey: string
+  fingerprint?: string
+  regions?: string[]
 }
 
 export interface InstanceSchedule {

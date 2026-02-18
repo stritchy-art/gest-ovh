@@ -3,6 +3,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import type { ScheduleUpdate } from '../types/index.js'
 import { getRedisClient } from './redisClient.js'
+import { logger } from './logger.js'
 
 const SCHEDULES_FILE = path.join(process.cwd(), 'schedules.json')
 const REDIS_HASH_KEY = 'schedules'
@@ -20,24 +21,32 @@ interface ScheduleData {
  * Charge les planifications depuis le fichier
  */
 export async function getSchedules(): Promise<Record<string, ScheduleData>> {
-  const client = await getRedisClient()
-  if (client) {
-    const data = await client.hGetAll(REDIS_HASH_KEY)
-    const result: Record<string, ScheduleData> = {}
-    for (const [key, value] of Object.entries(data)) {
-      result[key] = JSON.parse(value)
+  logger.debug('SCHEDULE', 'getSchedules appelé')
+  
+  try {
+    const client = await getRedisClient()
+    if (client) {
+      const data = await client.hGetAll(REDIS_HASH_KEY)
+      const result: Record<string, ScheduleData> = {}
+      for (const [key, value] of Object.entries(data)) {
+        result[key] = JSON.parse(value)
+      }
+      logger.debug('SCHEDULE', `${Object.keys(result).length} schedules chargés depuis Redis`)
+      return result
     }
-    return result
+  } catch (error) {
+    logger.error('SCHEDULE', 'Erreur lecture Redis, fallback vers fichier', error)
   }
 
+  // Fallback vers fichier JSON
   try {
     const data = await fs.readFile(SCHEDULES_FILE, 'utf-8')
-    return JSON.parse(data)
+    const schedules = JSON.parse(data)
+    logger.debug('SCHEDULE', `${Object.keys(schedules).length} schedules chargés depuis fichier`)
+    return schedules
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return {}
-    }
-    throw error
+    logger.debug('SCHEDULE', 'Aucun fichier de schedules, retour objet vide')
+    return {}
   }
 }
 

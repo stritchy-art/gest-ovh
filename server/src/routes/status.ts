@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { getServerEnvConfig } from '../config/env.js'
+import { isRedisAvailable } from '../services/redisClient.js'
 
 const router = Router()
 
@@ -10,6 +11,7 @@ router.get('/', (req, res) => {
 
   res.json({
     testMode: isTestMode,
+    redisAvailable: isRedisAvailable(),
     version: '1.0.0',
     timestamp: new Date().toISOString()
   })

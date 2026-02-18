@@ -1,16 +1,19 @@
 import { Router } from 'express'
 import { getSchedules, saveSchedule, deleteSchedule } from '../services/scheduleService.js'
 import type { ScheduleUpdate } from '../types/index.js'
+import { logger } from '../services/logger.js'
 
 const router = Router()
 
 // GET /api/schedules
 router.get('/', async (req, res) => {
   try {
+    logger.debug('API', 'GET /api/schedules')
     const schedules = await getSchedules()
+    logger.debug('API', `Retour ${Object.keys(schedules).length} schedules`)
     res.json(schedules)
   } catch (error) {
-    console.error('Error fetching schedules:', error)
+    logger.error('API', 'Error fetching schedules', error)
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
   }
 })
@@ -48,7 +51,7 @@ router.delete('/:instanceId', async (req, res) => {
     await deleteSchedule(instanceId)
     res.json({ success: true })
   } catch (error) {
-    console.error('Error deleting schedule:', error)
+    logger.error('API', 'Error deleting schedule', error)
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
   }
 })

@@ -1,97 +1,53 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useProjects } from '../hooks/useProjects'
+import { useInstances } from '../hooks/useInstances'
+import { DEFAULT_PAGE_SIZE, SortBy, SortDir } from '../constants'
+import { formatDate, getStatusBadge } from '../utils'
 import ovhService from '../services/ovhService'
+import ProjectSelector from './ProjectSelector'
+import InstanceFilters from './InstanceFilters'
+import Pagination from './Pagination'
 import InstanceLogs from './InstanceLogs'
+import InstanceDetails from './InstanceDetails'
 import ScheduleModal from './ScheduleModal'
 import type { Instance, InstanceSchedule } from '../types'
 
-function InstanceList() {
-  const [instances, setInstances] = useState<Instance[]>([])
-  const [projects, setProjects] = useState<string[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
-  const [error, setError] = useState<string | null>(null)
+interface InstanceListProps {
+  redisAvailable?: boolean
+}
+
+function InstanceList({ redisAvailable = true }: InstanceListProps) {
+  const { projects, loading: projectsLoading, error: projectsError } = useProjects()
   const [projectId, setProjectId] = useState<string | null>(null)
+  const { instances, loading: instancesLoading, error: instancesError, refetch, updateInstanceSchedule } = useInstances(projectId)
+  
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null)
   const [showLogs, setShowLogs] = useState<boolean>(false)
+  const [showDetails, setShowDetails] = useState<boolean>(false)
   const [showSchedule, setShowSchedule] = useState<boolean>(false)
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
   const [regionFilter, setRegionFilter] = useState<string>('ALL')
-  const [sortBy, setSortBy] = useState<'name' | 'created' | 'status'>('name')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [sortBy, setSortBy] = useState<SortBy>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [page, setPage] = useState<number>(1)
-  const [pageSize, setPageSize] = useState<number>(5)
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
 
+  // Set initial project when projects load
   useEffect(() => {
-    loadProjects()
-  }, [])
-
-  useEffect(() => {
-    if (projectId) {
-      loadInstances(projectId)
+    if (projects.length > 0 && !projectId) {
+      setProjectId(projects[0].id)
     }
-  }, [projectId])
+  }, [projects, projectId])
 
-  const loadProjects = async () => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      const projectList = await ovhService.getProjects()
-      if (projectList.length === 0) {
-        throw new Error('Aucun projet trouvé')
-      }
-
-      setProjects(projectList)
-      setProjectId((prev) => prev && projectList.includes(prev) ? prev : projectList[0])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadInstances = async (selectedProjectId: string) => {
-    setLoading(true)
-    setError(null)
-    
-    try {
-      const [instancesData, schedules] = await Promise.all([
-        ovhService.getInstances(selectedProjectId),
-        ovhService.getSchedules()
-      ])
-
-      const instancesWithSchedule: Instance[] = instancesData.map((instance) => {
-        const schedule = schedules[instance.id]
-        if (schedule) {
-          return {
-            ...instance,
-            scheduleMode: 'auto' as const,
-            schedule: {
-              startTime: schedule.startTime,
-              stopTime: schedule.stopTime,
-              enabled: schedule.enabled,
-              timezone: schedule.timezone
-            }
-          }
-        }
-        return { ...instance, scheduleMode: 'manual' as const }
-      })
-
-      setInstances(instancesWithSchedule)
-      setPage(1)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue')
-    } finally {
-      setLoading(false)
-    }
-  }
-
+  const loading = projectsLoading || instancesLoading
+  const error = projectsError || instancesError
   const handleStartInstance = async (instance: Instance) => {
     if (!projectId) return
     
     try {
       await ovhService.startInstance(projectId, instance.id)
-      await loadInstances(projectId)
+      refetch()
     } catch (err) {
       alert(`Erreur lors du démarrage: ${err instanceof Error ? err.message : 'Erreur inconnue'}`)
     }
@@ -102,7 +58,7 @@ function InstanceList() {
     
     try {
       await ovhService.stopInstance(projectId, instance.id)
-      await loadInstances(projectId)
+      refetch()
     } catch (err) {
       alert(`Erreur lors de l'arrêt: ${err instanceof Error ? err.message : 'Erreur inconnue'}`)
     }
@@ -111,6 +67,11 @@ function InstanceList() {
   const handleShowLogs = (instance: Instance) => {
     setSelectedInstance(instance)
     setShowLogs(true)
+  }
+
+  const handleShowDetails = (instance: Instance) => {
+    setSelectedInstance(instance)
+    setShowDetails(true)
   }
 
   const handleShowSchedule = (instance: Instance) => {
@@ -123,38 +84,11 @@ function InstanceList() {
 
     try {
       await ovhService.saveSchedule(selectedInstance.id, projectId, schedule)
-
-      setInstances(prev => prev.map(inst =>
-        inst.id === selectedInstance.id
-          ? { ...inst, scheduleMode: schedule.enabled ? 'auto' : 'manual', schedule }
-          : inst
-      ))
-
+      updateInstanceSchedule(selectedInstance.id, schedule)
       alert('Planification enregistrée avec succès !')
     } catch (err) {
       alert(`Erreur lors de la sauvegarde: ${err instanceof Error ? err.message : 'Erreur inconnue'}`)
     }
-  }
-
-  const getStatusBadge = (status: string): string => {
-    const badges: Record<string, string> = {
-      'ACTIVE': 'bg-success',
-      'SHUTOFF': 'bg-secondary',
-      'BUILDING': 'bg-warning text-dark',
-      'ERROR': 'bg-danger',
-      'PAUSED': 'bg-secondary'
-    }
-    return badges[status] || 'bg-secondary'
-  }
-
-  const formatDate = (dateString: string): string => {
-    const date = new Date(dateString)
-    const day = String(date.getDate()).padStart(2, '0')
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const year = date.getFullYear()
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    return `${day}/${month}/${year} ${hours}:${minutes}`
   }
 
   useEffect(() => {
@@ -231,97 +165,39 @@ function InstanceList() {
       </div>
 
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-        <div className="d-flex align-items-center gap-2">
-          <label className="mb-0">Projet:</label>
-          <select
-            className="form-select form-select-sm bg-dark text-light border-secondary"
-            style={{ width: 'auto' }}
-            value={projectId ?? ''}
-            onChange={(e) => setProjectId(e.target.value)}
-          >
-            {projects.map((project) => (
-              <option key={project} value={project}>{project}</option>
-            ))}
-          </select>
-        </div>
+        <ProjectSelector
+          projects={projects}
+          selectedProjectId={projectId}
+          onProjectChange={setProjectId}
+        />
 
-        <div className="d-flex flex-wrap align-items-center gap-2">
-          <input
-            type="text"
-            className="form-control form-control-sm bg-dark text-light border-secondary"
-            placeholder="Rechercher par nom ou ID"
-            style={{ width: 220 }}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-
-          <select
-            className="form-select form-select-sm bg-dark text-light border-secondary"
-            style={{ width: 140 }}
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="ALL">Tous statuts</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="SHUTOFF">SHUTOFF</option>
-            <option value="BUILDING">BUILDING</option>
-          </select>
-
-          <select
-            className="form-select form-select-sm bg-dark text-light border-secondary"
-            style={{ width: 140 }}
-            value={regionFilter}
-            onChange={(e) => setRegionFilter(e.target.value)}
-          >
-            <option value="ALL">Toutes régions</option>
-            {availableRegions.map((region) => (
-              <option key={region} value={region}>{region}</option>
-            ))}
-          </select>
-
-          <select
-            className="form-select form-select-sm bg-dark text-light border-secondary"
-            style={{ width: 140 }}
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'name' | 'created' | 'status')}
-          >
-            <option value="name">Tri: Nom</option>
-            <option value="created">Tri: Date</option>
-            <option value="status">Tri: Statut</option>
-          </select>
-
-          <select
-            className="form-select form-select-sm bg-dark text-light border-secondary"
-            style={{ width: 120 }}
-            value={sortDir}
-            onChange={(e) => setSortDir(e.target.value as 'asc' | 'desc')}
-          >
-            <option value="asc">Asc</option>
-            <option value="desc">Desc</option>
-          </select>
-
-          <select
-            className="form-select form-select-sm bg-dark text-light border-secondary"
-            style={{ width: 120 }}
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
-            <option value={5}>5 / page</option>
-            <option value={10}>10 / page</option>
-            <option value={20}>20 / page</option>
-          </select>
-
-          <button
-            onClick={() => projectId && loadInstances(projectId)}
-            className="btn btn-primary btn-sm"
-          >
-            <i className="bi bi-arrow-clockwise me-2"></i>
-            Actualiser
-          </button>
-        </div>
+        <InstanceFilters
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          regionFilter={regionFilter}
+          setRegionFilter={setRegionFilter}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          sortDir={sortDir}
+          setSortDir={setSortDir}
+          pageSize={pageSize}
+          setPageSize={setPageSize}
+          loading={loading}
+          onRefresh={refetch}
+          availableRegions={availableRegions}
+        />
       </div>
 
-      {filteredInstances.length === 0 ? (
+      {loading ? (
+        <div className="text-center py-5">
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Chargement...</span>
+          </div>
+          <p className="mt-3">Chargement des instances...</p>
+        </div>
+      ) : filteredInstances.length === 0 ? (
         <div className="alert alert-info">
           <i className="bi bi-info-circle-fill me-2"></i>
           Aucune instance trouvée
@@ -367,6 +243,11 @@ function InstanceList() {
                   <td>
                     <div className="fw-bold">{instance.name}</div>
                     <small className="text-muted">{instance.id}</small>
+                    {instance.imageName && (
+                      <div className="small text-info mt-1">
+                        <i className="bi bi-disc me-1"></i>{instance.imageName}
+                      </div>
+                    )}
                   </td>
                   <td>
                     <span className={`badge ${getStatusBadge(instance.status)}`}>
@@ -374,7 +255,32 @@ function InstanceList() {
                     </span>
                   </td>
                   <td>
-                    <span className="text-info">{instance.flavorId}</span>
+                    <div>
+                      {instance.flavorName ? (
+                        <>
+                          <span className="text-info fw-bold">{instance.flavorName}</span>
+                          {instance.vcpus && instance.ram ? (
+                            <div className="small text-muted">
+                              <i className="bi bi-cpu me-1"></i>{instance.vcpus} vCPU
+                              {' • '}
+                              <i className="bi bi-memory me-1"></i>{instance.ram}GB RAM
+                            </div>
+                          ) : null}
+                          {instance.monthlyCost && (
+                            <div className="small text-success">
+                              <i className="bi bi-currency-euro me-1"></i>{instance.monthlyCost}€/mois
+                            </div>
+                          )}
+                          {instance.outgoingTraffic !== undefined && instance.outgoingTraffic > 0 && (
+                            <div className="small text-warning">
+                              <i className="bi bi-arrow-up-circle me-1"></i>{(instance.outgoingTraffic / (1024**3)).toFixed(2)}GB sortant
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-muted">{instance.flavorId}</span>
+                      )}
+                    </div>
                   </td>
                   <td>
                     {instance.region}
@@ -412,9 +318,17 @@ function InstanceList() {
                       <button
                         onClick={() => handleShowSchedule(instance)}
                         className={`btn btn-sm ${instance.scheduleMode === 'auto' && instance.schedule?.enabled ? 'btn-warning' : 'btn-outline-secondary'}`}
-                        title="Planification"
+                        title={redisAvailable ? "Planification" : "Redis requis pour la planification"}
+                        disabled={!redisAvailable}
                       >
                         <i className={`bi ${instance.scheduleMode === 'auto' && instance.schedule?.enabled ? 'bi-clock-fill' : 'bi-clock'}`}></i>
+                      </button>
+                      <button
+                        onClick={() => handleShowDetails(instance)}
+                        className="btn btn-sm btn-outline-info"
+                        title="Voir les détails (métriques, metadata, SSH keys)"
+                      >
+                        <i className="bi bi-info-circle"></i>
                       </button>
                       <button
                         onClick={() => handleShowLogs(instance)}
@@ -430,42 +344,12 @@ function InstanceList() {
             </tbody>
           </table>
 
-          <div className="d-flex justify-content-between align-items-center mt-3">
-            <small className="text-muted">
-              {sortedInstances.length} instance(s) — page {page} / {totalPages}
-            </small>
-
-            <div className="btn-group btn-group-sm" role="group">
-              <button
-                className="btn btn-outline-secondary"
-                onClick={() => setPage(1)}
-                disabled={page === 1}
-              >
-                «
-              </button>
-              <button
-                className="btn btn-outline-secondary"
-                onClick={() => setPage(Math.max(1, page - 1))}
-                disabled={page === 1}
-              >
-                <i className="bi bi-chevron-left"></i>
-              </button>
-              <button
-                className="btn btn-outline-secondary"
-                onClick={() => setPage(Math.min(totalPages, page + 1))}
-                disabled={page === totalPages}
-              >
-                <i className="bi bi-chevron-right"></i>
-              </button>
-              <button
-                className="btn btn-outline-secondary"
-                onClick={() => setPage(totalPages)}
-                disabled={page === totalPages}
-              >
-                »
-              </button>
-            </div>
-          </div>
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={sortedInstances.length}
+            onPageChange={setPage}
+          />
         </div>
       )}
 
@@ -476,6 +360,12 @@ function InstanceList() {
             projectId={projectId!}
             show={showLogs}
             onClose={() => setShowLogs(false)}
+          />
+          <InstanceDetails
+            instance={selectedInstance}
+            projectId={projectId!}
+            show={showDetails}
+            onClose={() => setShowDetails(false)}
           />
           <ScheduleModal
             instance={selectedInstance}

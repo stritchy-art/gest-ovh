@@ -4,6 +4,7 @@ import InstanceList from './components/InstanceList'
 
 function App() {
   const [isTestMode, setIsTestMode] = useState<boolean>(false)
+  const [redisAvailable, setRedisAvailable] = useState<boolean>(true)
   const [loading, setLoading] = useState<boolean>(true)
 
   useEffect(() => {
@@ -12,6 +13,7 @@ function App() {
       .then(res => res.json())
       .then(data => {
         setIsTestMode(data.testMode)
+        setRedisAvailable(data.redisAvailable ?? true)
         setLoading(false)
       })
       .catch(() => {
@@ -59,7 +61,7 @@ function App() {
           </ol>
         </nav>
 
-        <InstanceList />
+        <InstanceList redisAvailable={redisAvailable} />
       </div>
     </>
   )

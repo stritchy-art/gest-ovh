@@ -1,15 +1,44 @@
 import { Router } from 'express'
-import { getProjects } from '../services/ovhService.js'
+import { getProjects, getProjectDetails, getProjectSSHKeys } from '../services/ovhService.js'
+import { logger } from '../services/logger.js'
 
 const router = Router()
 
 // POST /api/projects/list
 router.post('/list', async (req, res) => {
   try {
-    const projects = await getProjects()
-    res.json(projects)
+    const projectIds = await getProjects()
+    
+    // Récupérer les détails de chaque projet en parallèle
+    const projectsWithDetails = await Promise.all(
+      projectIds.map(async (id) => {
+        const details = await getProjectDetails(id)
+        return details || { id, description: id }
+      })
+    )
+    
+    res.json(projectsWithDetails)
   } catch (error) {
-    console.error('Error fetching projects:', error)
+    logger.error('API', 'Error fetching projects', error)
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
+  }
+})
+
+// POST /api/projects/sshkeys
+router.post('/sshkeys', async (req, res) => {
+  try {
+    const { projectId } = req.body as { projectId: string }
+    
+    if (!projectId) {
+      logger.warn('API', 'POST /api/projects/sshkeys - Missing projectId')
+      return res.status(400).json({ error: 'Missing projectId' })
+    }
+
+    logger.debug('API', `POST /api/projects/sshkeys - projectId: ${projectId}`)
+    const sshKeys = await getProjectSSHKeys(projectId)
+    res.json(sshKeys)
+  } catch (error) {
+    logger.error('API', 'Error fetching SSH keys', error)
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
   }
 })

@@ -35,3 +35,9 @@ backups/
 
 # Secrets
 secrets/
+
+# SSH Keys
+*.pub
+*[[]A[[]B*
+id_rsa*
+id_ed25519*
