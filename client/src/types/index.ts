@@ -90,3 +90,13 @@ export interface ScheduleUpdate {
   instanceId: string
   schedule: InstanceSchedule
 }
+
+export interface ActionLogEntry {
+  timestamp: string
+  action: 'start' | 'stop'
+  instanceId: string
+  projectId: string
+  mode: 'manual' | 'auto'
+  status: 'success' | 'error'
+  message?: string
+}

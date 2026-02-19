@@ -36,8 +36,16 @@ backups/
 # Secrets
 secrets/
 
+# Coverage
+coverage/
+*.lcov
+
 # SSH Keys
 *.pub
 *[[]A[[]B*
+[[]A[[]B
+[[]A[[]B.pub
 id_rsa*
 id_ed25519*
+*.pem
+*.key

@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 import InstanceList from './components/InstanceList'
+import ActionLogs from './components/ActionLogs'
 
 function App() {
   const [isTestMode, setIsTestMode] = useState<boolean>(false)
   const [redisAvailable, setRedisAvailable] = useState<boolean>(true)
   const [loading, setLoading] = useState<boolean>(true)
+  const [showActionLogs, setShowActionLogs] = useState<boolean>(false)
 
   useEffect(() => {
     // Vérifier le mode de fonctionnement au démarrage
@@ -29,12 +31,22 @@ function App() {
             <i className="bi bi-cloud-fill me-2"></i>
             OVH Cloud Manager
           </span>
-          {!loading && isTestMode && (
-            <span className="badge bg-warning text-dark">
-              <i className="bi bi-flask me-1"></i>
-              Mode Test - Credentials OVH non configurées
-            </span>
-          )}
+          <div className="d-flex align-items-center gap-2">
+            <button 
+              className="btn btn-outline-light btn-sm"
+              onClick={() => setShowActionLogs(true)}
+              title="Historique des actions"
+            >
+              <i className="bi bi-clock-history me-1"></i>
+              Historique
+            </button>
+            {!loading && isTestMode && (
+              <span className="badge bg-warning text-dark">
+                <i className="bi bi-flask me-1"></i>
+                Mode Test - Credentials OVH non configurées
+              </span>
+            )}
+          </div>
         </div>
       </nav>
 
@@ -62,6 +74,11 @@ function App() {
         </nav>
 
         <InstanceList redisAvailable={redisAvailable} />
+        
+        <ActionLogs 
+          show={showActionLogs}
+          onClose={() => setShowActionLogs(false)}
+        />
       </div>
     </>
   )
