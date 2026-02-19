@@ -90,8 +90,14 @@ const mockRegistry: Record<string, MockHandler> = {
 
 // Normalise un path en remplaçant les IDs par :id pour le matching
 function normalizePath(path: string): string {
-  // Remplace les UUIDs, IDs alphanumériques longs, etc. par :id
-  return path.replace(/\/[a-f0-9-]{8,}[a-z0-9-]*/gi, '/:id')
+  // Stratégie: remplacer uniquement après /cloud/project/, /instance/, /flavor/, /image/, /sshkey/
+  // pour éviter de remplacer les mots-clés de l'API
+  return path
+    .replace(/\/cloud\/project\/[^/]+/, '/cloud/project/:id')
+    .replace(/\/instance\/[^/]+/, '/instance/:id')
+    .replace(/\/flavor\/[^/]+/, '/flavor/:id')
+    .replace(/\/image\/[^/]+/, '/image/:id')
+    .replace(/\/sshkey\/[^/]+/, '/sshkey/:id')
 }
 
 // Wrapper pour appels API avec logging automatique et gestion du mode test
