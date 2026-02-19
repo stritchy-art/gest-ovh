@@ -1,5 +1,13 @@
 // Types pour les données OVH
 
+export interface OVHConfig {
+  endpoint: string
+  appKey: string
+  appSecret: string
+  consumerKey: string
+  testMode?: boolean
+}
+
 export interface Project {
   id: string
   description: string

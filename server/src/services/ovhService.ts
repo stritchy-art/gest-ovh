@@ -39,8 +39,81 @@ async function withTimeout<T>(promise: Promise<T>, ms = 15000): Promise<T> {
   return Promise.race([promise, timeout])
 }
 
-// Wrapper pour appels API avec logging automatique
+// Registry des réponses mock pour le mode test
+type MockHandler = (...args: any[]) => any | Promise<any>
+
+const mockRegistry: Record<string, MockHandler> = {
+  'GET /cloud/project': async () => {
+    await simulateDelay(300, 800)
+    return ['projet-demo-1', 'projet-demo-2']
+  },
+  'GET /cloud/project/:id': async (projectId: string) => {
+    await simulateDelay(200, 500)
+    return {
+      description: `Projet ${projectId}`,
+      projectName: `Projet ${projectId}`
+    }
+  },
+  'GET /cloud/project/:id/instance': async () => {
+    await simulateDelay(500, 1500)
+    return getMockInstances()
+  },
+  'POST /cloud/project/:id/instance/:id/start': async () => {
+    await simulateDelay(1000, 2000)
+    return { status: 'Instance starting' }
+  },
+  'POST /cloud/project/:id/instance/:id/stop': async () => {
+    await simulateDelay(1000, 2000)
+    return { status: 'Instance stopping' }
+  },
+  'GET /cloud/project/:id/flavor/:id': async () => {
+    await simulateDelay(200, 400)
+    return null // Les mocks d'instances ont déjà les infos flavor
+  },
+  'GET /cloud/project/:id/image/:id': async () => {
+    await simulateDelay(200, 400)
+    return null // Les mocks d'instances ont déjà les infos image
+  },
+  'GET /cloud/project/:id/sshkey': async () => {
+    await simulateDelay(300, 600)
+    return [
+      {
+        id: 'key-1',
+        name: 'admin-key',
+        publicKey: 'ssh-rsa AAAAB3NzaC1yc2E... admin@example.com',
+        fingerprint: '2048 SHA256:abcd1234... admin@example.com (RSA)',
+        regions: ['GRA11', 'SBG5']
+      }
+    ]
+  }
+}
+
+// Normalise un path en remplaçant les IDs par :id pour le matching
+function normalizePath(path: string): string {
+  // Remplace les UUIDs, IDs alphanumériques longs, etc. par :id
+  return path.replace(/\/[a-f0-9-]{8,}[a-z0-9-]*/gi, '/:id')
+}
+
+// Wrapper pour appels API avec logging automatique et gestion du mode test
 async function apiCall<T>(method: string, path: string, params?: unknown): Promise<T> {
+  // Mode test : utiliser le mock registry
+  if (isTestMode()) {
+    const normalizedPath = normalizePath(path)
+    const mockKey = `${method} ${normalizedPath}`
+    const mockHandler = mockRegistry[mockKey]
+    
+    if (mockHandler) {
+      logger.info('OVH', `Mode Test - ${method} ${path}`)
+      const result = await mockHandler(params)
+      return result as T
+    }
+    
+    // Si pas de mock défini, logger un warning et retourner un objet vide
+    logger.warn('OVH', `Mode Test - Pas de mock pour ${method} ${path}`)
+    return {} as T
+  }
+
+  // Mode production : appel API réel
   const client = createOVHClient()
   const startTime = Date.now()
   
@@ -66,24 +139,12 @@ async function apiCall<T>(method: string, path: string, params?: unknown): Promi
  * Récupère la liste des projets cloud
  */
 export async function getProjects(): Promise<string[]> {
-  // Mode test
-  if (isTestMode()) {
-    logger.info('OVH', 'Mode Test - getProjects')
-    return ['projet-demo-1', 'projet-demo-2']
-  }
-
-  // Mode production
   try {
     const projects = await apiCall<string[]>('GET', '/cloud/project')
     logger.info('OVH', `${projects.length} projets récupérés`)
     return projects
   } catch (error) {
     logger.error('OVH', 'Erreur getProjects', error)
-    // Retour en mode test si erreur d'authentification
-    if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('Invalid'))) {
-      logger.warn('OVH', 'Erreur authentification - Passage en mode test')
-      return ['projet-demo-1', 'projet-demo-2']
-    }
     throw error
   }
 }
@@ -92,10 +153,6 @@ export async function getProjects(): Promise<string[]> {
  * Récupère les détails d'un projet
  */
 export async function getProjectDetails(projectId: string): Promise<{ id: string; description: string } | null> {
-  if (isTestMode()) {
-    return { id: projectId, description: `Projet ${projectId}` }
-  }
-  
   try {
     const project = await apiCall<any>('GET', `/cloud/project/${projectId}`)
     return {
@@ -112,13 +169,6 @@ export async function getProjectDetails(projectId: string): Promise<{ id: string
  * Récupère la liste des instances d'un projet
  */
 export async function getInstances(projectId: string): Promise<Instance[]> {
-  // Mode test
-  if (isTestMode()) {
-    logger.info('OVH', 'Mode Test - getInstances')
-    return getMockInstances()
-  }
-
-  // Mode production
   try {
     const instances = await apiCall<Instance[]>('GET', `/cloud/project/${projectId}/instance`)
     logger.info('OVH', `${instances.length} instances récupérées pour projet ${projectId}`)
@@ -155,10 +205,6 @@ export async function getInstances(projectId: string): Promise<Instance[]> {
     return enrichedInstances
   } catch (error) {
     logger.error('OVH', `Erreur getInstances projet ${projectId}`, error)
-    if (error instanceof Error && error.message.includes('timeout')) {
-      logger.warn('OVH', 'Timeout - Retour données mock')
-      return getMockInstances()
-    }
     throw error
   }
 }
@@ -172,14 +218,6 @@ export async function startInstance(
 ): Promise<StartStopResponse> {
   logger.action.start(instanceId, projectId, 'manual')
   
-  // Mode test
-  if (isTestMode()) {
-    logger.info('OVH', 'Mode Test - startInstance')
-    await simulateDelay(1000, 2000)
-    return { status: 'Instance starting' }
-  }
-
-  // Mode production
   try {
     const result = await apiCall<StartStopResponse>('POST', `/cloud/project/${projectId}/instance/${instanceId}/start`)
     logger.action.success('start', instanceId)
@@ -199,14 +237,6 @@ export async function stopInstance(
 ): Promise<StartStopResponse> {
   logger.action.stop(instanceId, projectId, 'manual')
   
-  // Mode test
-  if (isTestMode()) {
-    logger.info('OVH', 'Mode Test - stopInstance')
-    await simulateDelay(1000, 2000)
-    return { status: 'Instance stopping' }
-  }
-
-  // Mode production
   try {
     const result = await apiCall<StartStopResponse>('POST', `/cloud/project/${projectId}/instance/${instanceId}/stop`)
     logger.action.success('stop', instanceId)
@@ -252,10 +282,14 @@ export async function getInstanceLogs(
  * Récupère les détails d'un flavor
  */
 async function getFlavor(projectId: string, flavorId: string): Promise<{ name: string; vcpus: number; ram: number; disk: number; pricePerHour: number } | null> {
-  if (isTestMode()) return null
-  
   try {
     const flavor = await apiCall<any>('GET', `/cloud/project/${projectId}/flavor/${flavorId}`)
+    
+    // En mode test, apiCall retourne null ou objet vide
+    if (!flavor || Object.keys(flavor).length === 0) {
+      return null
+    }
+    
     logger.info('OVH', `Flavor complet pour ${flavorId}:`, {
       name: flavor.name,
       vcpus: flavor.vcpus,
@@ -283,10 +317,14 @@ async function getFlavor(projectId: string, flavorId: string): Promise<{ name: s
  * Récupère les détails d'une image
  */
 async function getImage(projectId: string, imageId: string): Promise<{ name: string; type: string } | null> {
-  if (isTestMode()) return null
-  
   try {
     const image = await apiCall<any>('GET', `/cloud/project/${projectId}/image/${imageId}`)
+    
+    // En mode test, apiCall retourne null ou objet vide
+    if (!image || Object.keys(image).length === 0) {
+      return null
+    }
+    
     return {
       name: image.name || imageId,
       type: image.type || 'linux'
@@ -298,13 +336,16 @@ async function getImage(projectId: string, imageId: string): Promise<{ name: str
 }
 
 /**
- * Récupère les métriques de monitoring d'une instance (CPU, RAM, disque)
- * Note: L'API OVH Cloud Public ne propose pas d'endpoint /monitoring direct.
- * Les métriques sont accessibles via d'autres moyens (monitoring externe, agent, etc.)
+ * Récupère les données de monitoring d'une instance
+ * Note: L'endpoint /monitoring n'existe pas dans l'API OVH Cloud Public standard.
+ * Pour obtenir des métriques, il faudrait utiliser:
+ * - Un agent de monitoring installé sur l'instance (Prometheus, etc.)
+ * - Les services OVH Metrics Data Platform
+ * - Une solution externe
  */
-export async function getInstanceMonitoring(projectId: string, instanceId: string): Promise<any | null> {
+export async function getInstanceMonitoring(projectId: string, instanceId: string): Promise<any> {
+  // En mode test, retourner des données mockées
   if (isTestMode()) {
-    // Données mockées pour les métriques
     return {
       cpu: [
         { timestamp: Date.now() - 3600000, value: 25.5 },
@@ -325,10 +366,6 @@ export async function getInstanceMonitoring(projectId: string, instanceId: strin
   }
   
   // L'endpoint /monitoring n'existe pas dans l'API OVH Cloud Public
-  // Pour obtenir des métriques, il faudrait utiliser:
-  // - Un agent de monitoring installé sur l'instance (Prometheus, etc.)
-  // - Les services OVH Metrics Data Platform
-  // - Une solution externe
   logger.debug('OVH', `Monitoring non disponible via API pour instance ${instanceId}`)
   return null
 }
@@ -338,47 +375,36 @@ export async function getInstanceMonitoring(projectId: string, instanceId: strin
  * Note: L'API OVH Cloud Public ne propose pas d'endpoint /metadata direct.
  * Les metadata OpenStack sont accessibles depuis l'instance elle-même via http://169.254.169.254/
  */
-export async function getInstanceMetadata(projectId: string, instanceId: string): Promise<Record<string, string> | null> {
+export async function getInstanceMetadata(projectId: string, instanceId: string): Promise<Record<string, string>> {
+  // En mode test, retourner des metadata mockées
   if (isTestMode()) {
     return {
-      'created-by': 'admin',
-      'environment': 'production',
-      'version': '1.0.0'
+      'instance-id': instanceId,
+      'instance-type': 'd2-8',
+      'local-ipv4': '192.168.1.10',
+      'public-ipv4': '51.68.123.45'
     }
   }
   
   // L'endpoint /metadata n'existe pas dans l'API OVH Cloud Public
-  // Les metadata sont accessibles:
-  // - Depuis l'instance via le service de metadata OpenStack (169.254.169.254)
-  // - Pas directement via l'API OVH
+  // Les metadata sont accessibles depuis l'instance via le service de metadata OpenStack (169.254.169.254)
   logger.debug('OVH', `Metadata non disponibles via API pour instance ${instanceId}`)
-  return null
+  return {}
 }
 
 /**
- * Récupère la liste des clés SSH d'un projet
+ * Récupère les clés SSH d'un projet
  */
-export async function getProjectSSHKeys(projectId: string): Promise<any[]> {
-  if (isTestMode()) {
-    return [
-      {
-        id: 'key-1',
-        name: 'admin-key',
-        publicKey: 'ssh-rsa AAAAB3NzaC1yc2E... admin@example.com',
-        fingerprint: '2048 SHA256:abcd1234... admin@example.com (RSA)',
-        regions: ['GRA11', 'SBG5']
-      }
-    ]
-  }
-  
+export async function getProjectSSHKeys(projectId: string) {
   try {
     logger.debug('OVH', `Récupération liste clés SSH pour projet ${projectId}`)
     const keys = await apiCall<any[]>('GET', `/cloud/project/${projectId}/sshkey`)
-    logger.info('OVH', `${keys.length} clé(s) SSH trouvée(s) pour projet ${projectId}`)
     
-    if (keys.length === 0) {
+    if (!keys || keys.length === 0) {
       return []
     }
+    
+    logger.info('OVH', `${keys.length} clé(s) SSH trouvée(s) pour projet ${projectId}`)
     
     // L'API renvoie directement les objets complets, pas besoin d'appels supplémentaires
     logger.debug('OVH', 'Première clé SSH:', keys[0])
