@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react'
 import './App.css'
 import InstanceList from './components/InstanceList'
 import ActionLogs from './components/ActionLogs'
+import Game from './components/Game'
 
 function App() {
   const [isTestMode, setIsTestMode] = useState<boolean>(false)
   const [redisAvailable, setRedisAvailable] = useState<boolean>(true)
   const [loading, setLoading] = useState<boolean>(true)
   const [showActionLogs, setShowActionLogs] = useState<boolean>(false)
+  const [showGame, setShowGame] = useState<boolean>(false)
 
   useEffect(() => {
     // Vérifier le mode de fonctionnement au démarrage
@@ -21,6 +23,19 @@ function App() {
       .catch(() => {
         setLoading(false)
       })
+  }, [])
+
+  // Easter egg: Alt+K pour afficher le jeu
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.key === 'k') {
+        e.preventDefault()
+        setShowGame(prev => !prev)
+      }
+    }
+    
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
   return (
@@ -79,6 +94,24 @@ function App() {
           show={showActionLogs}
           onClose={() => setShowActionLogs(false)}
         />
+
+        {showGame && <Game onClose={() => setShowGame(false)} />}
+      </div>
+
+      {/* Easter egg hint */}
+      <div 
+        className="position-fixed bottom-0 end-0 p-2 text-muted small"
+        style={{ 
+          fontSize: '0.7rem', 
+          opacity: 0, 
+          cursor: 'help',
+          transition: 'opacity 0.3s ease'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.opacity = '0.6'}
+        onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
+        title="There's something hidden here... 🎮"
+      >
+        Alt+K
       </div>
     </>
   )
