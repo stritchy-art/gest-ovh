@@ -13,6 +13,7 @@ export default function Game({ onClose }: GameProps) {
     return saved ? parseInt(saved, 10) : 0
   })
 
+  const [superModeActive, setSuperModeActive] = useState(false)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -218,6 +219,7 @@ export default function Game({ onClose }: GameProps) {
           // Activer le mode super si on dépasse le high score
           if (currentScore > highScore && !isSuperMode) {
             isSuperMode = true
+            setSuperModeActive(true)
           }
           
           // Speed up every 5 points
@@ -258,6 +260,7 @@ export default function Game({ onClose }: GameProps) {
   const restart = () => {
     setScore(0)
     setGameOver(false)
+    setSuperModeActive(false)
   }
 
   return (
@@ -283,7 +286,25 @@ export default function Game({ onClose }: GameProps) {
               className="w-100 d-block"
               style={{ backgroundColor: '#0f172a' }}
             />
-            
+            {/* Cartoon Super Saiyan mode visuel */}
+            {superModeActive && !gameOver && (
+              <div
+                className="position-absolute top-0 start-50 translate-middle-x mt-4"
+                style={{
+                  zIndex: 10,
+                  pointerEvents: 'none',
+                  textShadow: '0 0 10px #fff700, 0 0 20px #ffec80',
+                  fontFamily: 'Comic Sans MS, Comic Sans, cursive',
+                  fontWeight: 'bold',
+                  fontSize: '3rem',
+                  color: '#ffe600',
+                  WebkitTextStroke: '2px #ff9800',
+                  filter: 'drop-shadow(0 0 10px #fff700) drop-shadow(0 0 20px #ffec80)'
+                }}
+              >
+               Super Saiyan mode! 
+              </div>
+            )}
             {gameOver && (
               <div 
                 className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-center"
