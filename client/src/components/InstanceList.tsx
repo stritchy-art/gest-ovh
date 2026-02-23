@@ -318,8 +318,7 @@ function InstanceList({ redisAvailable = true }: InstanceListProps) {
                       <button
                         onClick={() => handleShowSchedule(instance)}
                         className={`btn btn-sm ${instance.scheduleMode === 'auto' && instance.schedule?.enabled ? 'btn-warning' : 'btn-outline-secondary'}`}
-                        title={redisAvailable ? "Planification" : "Redis requis pour la planification"}
-                        disabled={!redisAvailable}
+                        title={redisAvailable ? "Planification disponible, même si l'instance est arrêtée" : "Redis requis pour la planification"}
                       >
                         <i className={`bi ${instance.scheduleMode === 'auto' && instance.schedule?.enabled ? 'bi-clock-fill' : 'bi-clock'}`}></i>
                       </button>
