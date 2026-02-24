@@ -1,5 +1,5 @@
 // Service pour interagir avec l'API backend
-import type { Instance, LogEntry, StartStopResponse, InstanceSchedule, InstanceMonitoring, SSHKey, Project, ActionLogEntry } from '../types'
+import type { Instance, LogEntry, StartStopResponse, InstanceSchedule, InstanceMonitoring, SSHKey, Project, ActionLogEntry, ProjectCurrentUsage } from '../types'
 
 class OVHService {
   private apiBase = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -88,6 +88,15 @@ class OVHService {
   async getActionLogs(limit = 200): Promise<ActionLogEntry[]> {
     return this.get<ActionLogEntry[]>(`/api/actions?limit=${limit}`)
   }
+
+  async getProjectUsage(projectId: string): Promise<ProjectCurrentUsage | null> {
+    try {
+      return await this.post<ProjectCurrentUsage>('/api/projects/usage', { projectId })
+    } catch {
+      return null
+    }
+  }
+
 }
 
 export default new OVHService()

@@ -80,3 +80,19 @@
 .spin {
   animation: spin 1s linear infinite;
 }
+
+/* Lisibilité : text-muted trop clair sur fond sombre */
+.text-muted {
+  color: #a1a1aa !important;
+}
+
+/* breadcrumb-link : style neutre comme un lien de nav */
+.breadcrumb-link {
+  color: #a1a1aa !important;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.breadcrumb-link:hover {
+  color: #fff !important;
+}

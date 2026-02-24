@@ -36,10 +36,19 @@ async function main() {
   try {
     const result = await client.requestPromised('POST', '/auth/credential', {
       accessRules: [
+        // Projets
         { method: 'GET', path: '/cloud/project' },
         { method: 'GET', path: '/cloud/project/*' },
+        // Instances
+        { method: 'GET', path: '/cloud/project/*/instance' },
+        { method: 'GET', path: '/cloud/project/*/instance/*' },
         { method: 'POST', path: '/cloud/project/*/instance/*/start' },
-        { method: 'POST', path: '/cloud/project/*/instance/*/stop' }
+        { method: 'POST', path: '/cloud/project/*/instance/*/stop' },
+        { method: 'GET', path: '/cloud/project/*/flavor/*' },
+        { method: 'GET', path: '/cloud/project/*/image/*' },
+        { method: 'GET', path: '/cloud/project/*/sshkey' },
+        // Consommation / facturation
+        { method: 'GET', path: '/cloud/project/*/usage/current' }
       ]
     })
 

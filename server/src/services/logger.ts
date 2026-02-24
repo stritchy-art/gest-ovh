@@ -109,6 +109,9 @@ export const logger = {
     response: (method: string, path: string, data: unknown, duration: number) => {
       log('debug', 'OVH_API', `← ${method} ${path} (${duration}ms)`, data)
     },
+    warn: (method: string, path: string, error: unknown, duration: number) => {
+      log('warn', 'OVH_API', `✗ ${method} ${path} (${duration}ms) — non disponible (droits insuffisants ?)`, error)
+    },
     error: (method: string, path: string, error: unknown, duration: number) => {
       log('error', 'OVH_API', `✗ ${method} ${path} (${duration}ms)`, error)
     }

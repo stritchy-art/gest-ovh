@@ -1,5 +1,5 @@
-// Service de données de test (mock)
-import type { Instance, LogEntry } from '../types/index.js'
+﻿// Service de données de test (mock)
+import type { Instance, LogEntry, ProjectCurrentUsage, InstanceUsageItem } from '../types/index.js'
 
 export function getMockInstances(): Instance[] {
   return [
@@ -106,4 +106,48 @@ function getRandomLogMessage(): string {
 export async function simulateDelay(min = 500, max = 1500): Promise<void> {
   const delay = Math.random() * (max - min) + min
   return new Promise(resolve => setTimeout(resolve, delay))
+}
+
+export function getMockProjectUsage(): ProjectCurrentUsage {
+  const now = new Date()
+  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+  const to = now.toISOString()
+  const hours = now.getDate() * 24
+
+  const items: InstanceUsageItem[] = [
+    {
+      reference: 'd2-4',
+      region: 'GRA11',
+      quantity: { unit: 'Hour', value: hours },
+      totalPrice: parseFloat((hours * 0.028).toFixed(2)),
+      detail: [{ instanceId: 'demo-1234-5678-9012', instanceName: 'web-server-frontend', quantity: { unit: 'Hour', value: hours }, totalPrice: parseFloat((hours * 0.028).toFixed(2)) }]
+    },
+    {
+      reference: 'd2-8',
+      region: 'GRA11',
+      quantity: { unit: 'Hour', value: hours },
+      totalPrice: parseFloat((hours * 0.056).toFixed(2)),
+      detail: [{ instanceId: 'demo-9876-5432-1098', instanceName: 'database-postgres', quantity: { unit: 'Hour', value: hours }, totalPrice: parseFloat((hours * 0.056).toFixed(2)) }]
+    },
+    {
+      reference: 'b2-15',
+      region: 'GRA9',
+      quantity: { unit: 'Hour', value: hours },
+      totalPrice: parseFloat((hours * 0.094).toFixed(2)),
+      detail: [{ instanceId: 'demo-1111-2222-3333', instanceName: 'api-backend-prod', quantity: { unit: 'Hour', value: hours }, totalPrice: parseFloat((hours * 0.094).toFixed(2)) }]
+    },
+    {
+      reference: 'r2-15',
+      region: 'GRA11',
+      quantity: { unit: 'Hour', value: hours },
+      totalPrice: parseFloat((hours * 0.106).toFixed(2)),
+      detail: [{ instanceId: 'demo-4444-5555-6666', instanceName: 'cache-redis', quantity: { unit: 'Hour', value: hours }, totalPrice: parseFloat((hours * 0.106).toFixed(2)) }]
+    }
+  ]
+
+  return {
+    period: { from, to },
+    hourlyUsage: { instance: items },
+    totalPrice: parseFloat(items.reduce((s, i) => s + i.totalPrice, 0).toFixed(2))
+  }
 }

@@ -10,7 +10,7 @@ import Pagination from './Pagination'
 import InstanceLogs from './InstanceLogs'
 import InstanceDetails from './InstanceDetails'
 import ScheduleModal from './ScheduleModal'
-import type { Instance, InstanceSchedule } from '../types'
+import type { Instance, InstanceSchedule, ProjectCurrentUsage } from '../types'
 
 interface InstanceListProps {
   redisAvailable?: boolean
@@ -25,6 +25,8 @@ function InstanceList({ redisAvailable = true }: InstanceListProps) {
   const [showLogs, setShowLogs] = useState<boolean>(false)
   const [showDetails, setShowDetails] = useState<boolean>(false)
   const [showSchedule, setShowSchedule] = useState<boolean>(false)
+  const [usage, setUsage] = useState<ProjectCurrentUsage | null>(null)
+  const [loadingUsage, setLoadingUsage] = useState(false)
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
   const [regionFilter, setRegionFilter] = useState<string>('ALL')
@@ -39,6 +41,20 @@ function InstanceList({ redisAvailable = true }: InstanceListProps) {
       setProjectId(projects[0].id)
     }
   }, [projects, projectId])
+
+  // Charger la consommation quand le projet change
+  useEffect(() => {
+    if (!projectId) {
+      setUsage(null)
+      return
+    }
+    setLoadingUsage(true)
+    setUsage(null)
+    ovhService.getProjectUsage(projectId)
+      .then(data => setUsage(data))
+      .catch(() => setUsage(null))
+      .finally(() => setLoadingUsage(false))
+  }, [projectId])
 
   const loading = projectsLoading || instancesLoading
   const error = projectsError || instancesError
@@ -189,6 +205,61 @@ function InstanceList({ redisAvailable = true }: InstanceListProps) {
           availableRegions={availableRegions}
         />
       </div>
+
+      {/* Consommation du mois en cours */}
+      {projectId && (
+        <div className="card bg-dark border-secondary mb-3">
+          <div className="card-header d-flex align-items-center justify-content-between py-2">
+            <span className="fw-semibold text-success">
+              <i className="bi bi-currency-euro me-2"></i>
+              Consommation du mois en cours
+            </span>
+            {usage && (
+              <small className="text-muted">
+                {new Date(usage.period.from).toLocaleDateString('fr-FR')} → {new Date(usage.period.to).toLocaleDateString('fr-FR')}
+              </small>
+            )}
+          </div>
+          <div className="card-body py-2">
+            {loadingUsage && !usage ? (
+              <div className="text-muted small">
+                <span className="spinner-border spinner-border-sm me-2"></span>
+                Chargement de la consommation...
+              </div>
+            ) : usage && usage.hourlyUsage?.instance?.length > 0 ? (
+              <div className="d-flex flex-wrap align-items-start gap-4">
+                <div className="text-center pe-3 border-end border-secondary">
+                  <div className="fw-bold fs-5 text-success">
+                    {(usage.totalPrice ?? usage.hourlyUsage.instance.reduce((s, i) => s + i.totalPrice, 0)).toFixed(2)} €
+                  </div>
+                  <small className="text-muted">Total période</small>
+                </div>
+                <div className="flex-grow-1">
+                  <table className="table table-sm table-dark mb-0">
+                    <tbody>
+                      {usage.hourlyUsage.instance.flatMap(item =>
+                        item.detail.map(d => (
+                          <tr key={d.instanceId}>
+                            <td className="py-1 border-0 text-light">{d.instanceName || d.instanceId}</td>
+                            <td className="py-1 border-0 text-muted small">{item.reference} · {item.region}</td>
+                            <td className="py-1 border-0 text-muted small text-end">{d.quantity.value}h</td>
+                            <td className="py-1 border-0 text-success fw-bold text-end">{d.totalPrice.toFixed(2)} €</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <small className="text-muted">
+                <i className="bi bi-info-circle me-1"></i>
+                Données de consommation non disponibles pour ce projet
+              </small>
+            )}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center py-5">

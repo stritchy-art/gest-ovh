@@ -1,12 +1,12 @@
-// Service pour interagir avec l'API OVH depuis le backend
+﻿// Service pour interagir avec l'API OVH depuis le backend
 import { createRequire } from 'node:module'
-import type { Instance, LogEntry, StartStopResponse } from '../types/index.js'
+import type { Instance, LogEntry, StartStopResponse, ProjectCurrentUsage } from '../types/index.js'
 import { getServerEnvConfig } from '../config/env.js'
 import { logger } from './logger.js'
 
 const require = createRequire(import.meta.url)
 const ovh = require('ovh')
-import { getMockInstances, getMockLogs, simulateDelay } from './mockService.js'
+import { getMockInstances, getMockLogs, getMockProjectUsage, simulateDelay } from './mockService.js'
 
 // Mode test activé si les credentials sont manquantes
 function isTestMode(): boolean {
@@ -85,13 +85,15 @@ const mockRegistry: Record<string, MockHandler> = {
         regions: ['GRA11', 'SBG5']
       }
     ]
+  },
+  'GET /cloud/project/:id/usage/current': async () => {
+    await simulateDelay(300, 700)
+    return getMockProjectUsage()
   }
 }
 
 // Normalise un path en remplaçant les IDs par :id pour le matching
 function normalizePath(path: string): string {
-  // Stratégie: remplacer uniquement après /cloud/project/, /instance/, /flavor/, /image/, /sshkey/
-  // pour éviter de remplacer les mots-clés de l'API
   return path
     .replace(/\/cloud\/project\/[^/]+/, '/cloud/project/:id')
     .replace(/\/instance\/[^/]+/, '/instance/:id')
@@ -429,5 +431,21 @@ export async function getProjectSSHKeys(projectId: string) {
   } catch (error) {
     logger.error('OVH', `Erreur récupération clés SSH projet ${projectId}`, error)
     return []
+  }
+}
+
+/**
+ * Récupère la consommation en cours du projet (période de facturation courante)
+ * Nécessite le droit GET /cloud/project/{id}/usage/current sur le consumer key
+ */
+export async function getProjectCurrentUsage(projectId: string): Promise<ProjectCurrentUsage | null> {
+  try {
+    const usage = await apiCall<ProjectCurrentUsage>('GET', `/cloud/project/${projectId}/usage/current`)
+    const total = usage.totalPrice ?? usage.hourlyUsage?.instance?.reduce((s, i) => s + i.totalPrice, 0) ?? 0
+    logger.info('OVH', `Consommation projet ${projectId}: ${total.toFixed(2)}€`)
+    return usage
+  } catch (error) {
+    logger.warn('OVH', `Impossible de récupérer la consommation du projet ${projectId}`, error)
+    return null
   }
 }

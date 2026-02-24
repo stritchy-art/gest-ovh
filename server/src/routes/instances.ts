@@ -19,17 +19,17 @@ router.post('/list', async (req, res) => {
     const { projectId } = req.body as { projectId: string }
     
     if (!projectId) {
-      logger.warn('API', 'POST /api/instances/list - Missing projectId')
+      logger.warn('INST', 'POST /api/instances/list - Missing projectId')
       return res.status(400).json({ error: 'Missing projectId' })
     }
 
-    logger.debug('API', `POST /api/instances/list - projectId: ${projectId}`)
+    logger.debug('INST', `POST /api/instances/list - projectId: ${projectId}`)
     const instances = await getInstances(projectId)
-    logger.info('API', `Retour ${instances.length} instances pour projet ${projectId}`)
-    logger.debug('API', 'Instances data', instances)
+    logger.info('INST', `Retour ${instances.length} instances pour projet ${projectId}`)
+    logger.debug('INST', 'Instances data', instances)
     res.json(instances)
   } catch (error) {
-    logger.error('API', 'Error fetching instances', error)
+    logger.error('INST', 'Error fetching instances', error)
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
   }
 })
@@ -58,7 +58,7 @@ router.post('/start', async (req, res) => {
     })
     res.json(result)
   } catch (error) {
-    logger.error('API', 'Error starting instance', error)
+    logger.error('INST', 'Error starting instance', error)
     actionCounter.inc({ action: 'start', mode: 'manual', status: 'error' })
     await logAction({
       timestamp: new Date().toISOString(),
@@ -97,7 +97,7 @@ router.post('/stop', async (req, res) => {
     })
     res.json(result)
   } catch (error) {
-    logger.error('API', 'Error stopping instance', error)
+    logger.error('INST', 'Error stopping instance', error)
     actionCounter.inc({ action: 'stop', mode: 'manual', status: 'error' })
     await logAction({
       timestamp: new Date().toISOString(),
@@ -127,7 +127,7 @@ router.post('/logs', async (req, res) => {
     const logs = await getInstanceLogs(projectId, instanceId)
     res.json(logs)
   } catch (error) {
-    logger.error('API', 'Error fetching logs', error)
+    logger.error('INST', 'Error fetching logs', error)
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
   }
 })
@@ -141,15 +141,15 @@ router.post('/monitoring', async (req, res) => {
     }
 
     if (!projectId || !instanceId) {
-      logger.warn('API', 'POST /api/instances/monitoring - Missing parameters')
+      logger.warn('INST', 'POST /api/instances/monitoring - Missing parameters')
       return res.status(400).json({ error: 'Missing required parameters' })
     }
 
-    logger.debug('API', `POST /api/instances/monitoring - projectId: ${projectId}, instanceId: ${instanceId}`)
+    logger.debug('INST', `POST /api/instances/monitoring - projectId: ${projectId}, instanceId: ${instanceId}`)
     const monitoring = await getInstanceMonitoring(projectId, instanceId)
     res.json(monitoring)
   } catch (error) {
-    logger.error('API', 'Error fetching monitoring data', error)
+    logger.error('INST', 'Error fetching monitoring data', error)
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
   }
 })
@@ -163,15 +163,15 @@ router.post('/metadata', async (req, res) => {
     }
 
     if (!projectId || !instanceId) {
-      logger.warn('API', 'POST /api/instances/metadata - Missing parameters')
+      logger.warn('INST', 'POST /api/instances/metadata - Missing parameters')
       return res.status(400).json({ error: 'Missing required parameters' })
     }
 
-    logger.debug('API', `POST /api/instances/metadata - projectId: ${projectId}, instanceId: ${instanceId}`)
+    logger.debug('INST', `POST /api/instances/metadata - projectId: ${projectId}, instanceId: ${instanceId}`)
     const metadata = await getInstanceMetadata(projectId, instanceId)
     res.json(metadata)
   } catch (error) {
-    logger.error('API', 'Error fetching metadata', error)
+    logger.error('INST', 'Error fetching metadata', error)
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
   }
 })

@@ -77,6 +77,36 @@ export interface StartStopResponse {
   status: string
 }
 
+// Types pour la consommation / facturation
+export interface InstanceUsageDetail {
+  instanceId: string
+  instanceName: string
+  quantity: { unit: string; value: number }
+  totalPrice: number
+}
+
+export interface InstanceUsageItem {
+  reference: string
+  region: string
+  quantity: { unit: string; value: number }
+  totalPrice: number
+  detail: InstanceUsageDetail[]
+}
+
+export interface ProjectCurrentUsage {
+  period: {
+    from: string
+    to: string
+  }
+  hourlyUsage: {
+    instance: InstanceUsageItem[]
+  }
+  monthlyUsage?: {
+    instance: InstanceUsageItem[]
+  }
+  totalPrice?: number
+}
+
 // Types pour la gestion des planifications
 export interface ScheduleConfig {
   instanceId: string

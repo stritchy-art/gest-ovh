@@ -30,6 +30,9 @@ services:
       - OVH_APP_KEY_FILE=/run/secrets/ovh_app_key
       - OVH_APP_SECRET_FILE=/run/secrets/ovh_app_secret
       - OVH_CONSUMER_KEY_FILE=/run/secrets/ovh_consumer_key
+      # Clé API OVH AI Endpoints (optionnel)
+      # Générer via : Manager OVH > Public Cloud > AI & Machine Learning > AI Endpoints
+      - OVH_AI_ENDPOINTS_API_KEY=${OVH_AI_ENDPOINTS_API_KEY}
     volumes:
       # Persister les planifications
       - ./schedules.json:/app/schedules.json

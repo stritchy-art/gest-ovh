@@ -36,3 +36,5 @@ export function getServerEnvConfig(): ServerEnvConfig {
 export function hasOvhCredentials(config: ServerEnvConfig): boolean {
   return Boolean(config.ovhAppKey && config.ovhAppSecret && config.ovhConsumerKey)
 }
+
+export const SERVER_PORT = process.env.PORT || 3002;

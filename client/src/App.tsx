@@ -1,8 +1,50 @@
 import { useState, useEffect } from 'react'
+import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import InstanceList from './components/InstanceList'
 import ActionLogs from './components/ActionLogs'
 import Game from './components/Game'
+import HomePage from './components/HomePage'
+
+// Fil d'ariane dynamique basé sur la route courante
+function Breadcrumb() {
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  const crumbs: { label: string; icon: string; path?: string }[] = [
+    { label: 'Accueil', icon: 'bi-house', path: '/' }
+  ]
+
+  if (location.pathname.startsWith('/instances')) {
+    crumbs.push({ label: 'Gestion des Instances', icon: 'bi-display' })
+  }
+
+  return (
+    <nav aria-label="breadcrumb" className="mb-3">
+      <ol className="breadcrumb breadcrumb-dark mb-0">
+        {crumbs.map((crumb, idx) => {
+          const isLast = idx === crumbs.length - 1
+          return isLast ? (
+            <li key={idx} className="breadcrumb-item active" aria-current="page">
+              <i className={`bi ${crumb.icon} me-1`}></i>
+              {crumb.label}
+            </li>
+          ) : (
+            <li key={idx} className="breadcrumb-item">
+              <button
+                className="btn btn-link btn-sm p-0 text-decoration-none breadcrumb-link"
+                onClick={() => crumb.path && navigate(crumb.path)}
+              >
+                <i className={`bi ${crumb.icon} me-1`}></i>
+                {crumb.label}
+              </button>
+            </li>
+          )
+        })}
+      </ol>
+    </nav>
+  )
+}
 
 function App() {
   const [isTestMode, setIsTestMode] = useState<boolean>(false)
@@ -12,7 +54,6 @@ function App() {
   const [showGame, setShowGame] = useState<boolean>(false)
 
   useEffect(() => {
-    // Vérifier le mode de fonctionnement au démarrage
     fetch('/api/status')
       .then(res => res.json())
       .then(data => {
@@ -42,12 +83,16 @@ function App() {
     <>
       <nav className="navbar navbar-dark bg-dark mb-4">
         <div className="container-fluid">
-          <span className="navbar-brand mb-0 h1">
+          <Link to="/" className="navbar-brand mb-0 h1 text-decoration-none text-white">
             <i className="bi bi-cloud-fill me-2"></i>
             OVH Cloud Manager
-          </span>
+          </Link>
           <div className="d-flex align-items-center gap-2">
-            <button 
+            <Link to="/instances" className="btn btn-outline-light btn-sm">
+              <i className="bi bi-display me-1"></i>
+              Instances
+            </Link>
+            <button
               className="btn btn-outline-light btn-sm"
               onClick={() => setShowActionLogs(true)}
               title="Historique des actions"
@@ -58,7 +103,7 @@ function App() {
             {!loading && isTestMode && (
               <span className="badge bg-warning text-dark">
                 <i className="bi bi-flask me-1"></i>
-                Mode Test - Credentials OVH non configurées
+                Mode Test
               </span>
             )}
           </div>
@@ -69,28 +114,21 @@ function App() {
         {!loading && isTestMode && (
           <div className="alert alert-warning" role="alert">
             <i className="bi bi-exclamation-triangle-fill me-2"></i>
-            <strong>Mode Test activé</strong> - Les credentials OVH ne sont pas configurées côté serveur. 
-            Vous visualisez des données simulées. Pour utiliser vos vraies instances OVH, configurez les 
-            variables d'environnement <code>OVH_APP_KEY</code>, <code>OVH_APP_SECRET</code> et <code>OVH_CONSUMER_KEY</code> 
+            <strong>Mode Test activé</strong> - Les credentials OVH ne sont pas configurées côté serveur.
+            Vous visualisez des données simulées. Pour utiliser vos vraies instances OVH, configurez les
+            variables d'environnement <code>OVH_APP_KEY</code>, <code>OVH_APP_SECRET</code> et <code>OVH_CONSUMER_KEY</code>
             dans le fichier <code>.env</code> du serveur.
           </div>
         )}
-        
-        <nav aria-label="breadcrumb" className="mb-3">
-          <ol className="breadcrumb breadcrumb-dark mb-0">
-            <li className="breadcrumb-item">
-              <i className="bi bi-house me-1"></i>
-              Accueil
-            </li>
-            <li className="breadcrumb-item active" aria-current="page">
-              Instances
-            </li>
-          </ol>
-        </nav>
 
-        <InstanceList redisAvailable={redisAvailable} />
-        
-        <ActionLogs 
+        <Breadcrumb />
+
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/instances" element={<InstanceList redisAvailable={redisAvailable} />} />
+        </Routes>
+
+        <ActionLogs
           show={showActionLogs}
           onClose={() => setShowActionLogs(false)}
         />
