@@ -27,12 +27,12 @@ function createOVHClient() {
     appKey: config.ovhAppKey,
     appSecret: config.ovhAppSecret,
     consumerKey: config.ovhConsumerKey,
-    timeout: 10000 // 10 secondes max
+    timeout: 30000 // 30 secondes max (l'API OVH peut être lente)
   })
 }
 
 // Wrapper avec timeout global pour éviter les appels bloquants
-async function withTimeout<T>(promise: Promise<T>, ms = 15000): Promise<T> {
+async function withTimeout<T>(promise: Promise<T>, ms = 35000): Promise<T> {
   const timeout = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error('Request timeout')), ms)
   )
@@ -65,6 +65,10 @@ const mockRegistry: Record<string, MockHandler> = {
   'POST /cloud/project/:id/instance/:id/stop': async () => {
     await simulateDelay(1000, 2000)
     return { status: 'Instance stopping' }
+  },
+  'POST /cloud/project/:id/instance/:id/unshelve': async () => {
+    await simulateDelay(1000, 2000)
+    return { status: 'Instance unshelving' }
   },
   'GET /cloud/project/:id/flavor/:id': async () => {
     await simulateDelay(200, 400)
@@ -176,9 +180,27 @@ export async function getProjectDetails(projectId: string): Promise<{ id: string
 /**
  * Récupère la liste des instances d'un projet
  */
+// Statuts OVH non retournés par défaut dans la liste, à requêter séparément
+const EXTRA_STATUSES = ['REBOOT', 'HARD_REBOOT', 'RESCUE', 'VERIFY_RESIZE', 'SHELVED']
+
 export async function getInstances(projectId: string): Promise<Instance[]> {
   try {
-    const instances = await apiCall<Instance[]>('GET', `/cloud/project/${projectId}/instance`)
+    // L'API OVH n'inclut pas certains états transitoires dans la liste par défaut
+    // On fusionne la liste principale avec les requêtes par statut
+    const [defaultInstances, ...extraResults] = await Promise.all([
+      apiCall<Instance[]>('GET', `/cloud/project/${projectId}/instance`),
+      ...EXTRA_STATUSES.map(status =>
+        apiCall<Instance[]>('GET', `/cloud/project/${projectId}/instance`, { status }).catch(() => [] as Instance[])
+      )
+    ])
+
+    // Dédoublonner par ID
+    const instanceMap = new Map<string, Instance>()
+    for (const inst of [...defaultInstances, ...extraResults.flat()]) {
+      instanceMap.set(inst.id, inst)
+    }
+    const instances = Array.from(instanceMap.values())
+
     logger.info('OVH', `${instances.length} instances récupérées pour projet ${projectId}`)
     
     // Enrichir avec les infos flavor et image (en parallèle)
@@ -251,6 +273,25 @@ export async function stopInstance(
     return result
   } catch (error) {
     logger.action.failure('stop', instanceId, error)
+    throw error
+  }
+}
+
+/**
+ * Réactive une instance SHELVED (unshelve)
+ */
+export async function unshelveInstance(
+  projectId: string,
+  instanceId: string
+): Promise<StartStopResponse> {
+  logger.action.start(instanceId, projectId, 'manual')
+
+  try {
+    const result = await apiCall<StartStopResponse>('POST', `/cloud/project/${projectId}/instance/${instanceId}/unshelve`)
+    logger.action.success('unshelve', instanceId)
+    return result
+  } catch (error) {
+    logger.action.failure('unshelve', instanceId, error)
     throw error
   }
 }

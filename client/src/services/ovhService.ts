@@ -61,6 +61,10 @@ class OVHService {
     return this.post<StartStopResponse>('/api/instances/stop', { projectId, instanceId })
   }
 
+  async unshelveInstance(projectId: string, instanceId: string): Promise<StartStopResponse> {
+    return this.post<StartStopResponse>('/api/instances/unshelve', { projectId, instanceId })
+  }
+
   async getInstanceLogs(projectId: string, instanceId: string): Promise<LogEntry[]> {
     return this.post<LogEntry[]>('/api/instances/logs', { projectId, instanceId })
   }

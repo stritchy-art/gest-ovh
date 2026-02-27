@@ -2,7 +2,8 @@ import { Router } from 'express'
 import { 
   getInstances, 
   startInstance, 
-  stopInstance, 
+  stopInstance,
+  unshelveInstance,
   getInstanceLogs,
   getInstanceMonitoring,
   getInstanceMetadata
@@ -102,6 +103,46 @@ router.post('/stop', async (req, res) => {
     await logAction({
       timestamp: new Date().toISOString(),
       action: 'stop',
+      instanceId: req.body?.instanceId ?? 'unknown',
+      projectId: req.body?.projectId ?? 'unknown',
+      mode: 'manual',
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    })
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' })
+  }
+})
+
+// POST /api/instances/unshelve
+router.post('/unshelve', async (req, res) => {
+  try {
+    const { projectId, instanceId } = req.body as {
+      projectId: string
+      instanceId: string
+    }
+
+    if (!projectId || !instanceId) {
+      return res.status(400).json({ error: 'Missing required parameters' })
+    }
+
+    const result = await unshelveInstance(projectId, instanceId)
+    actionCounter.inc({ action: 'unshelve', mode: 'manual', status: 'success' })
+    await logAction({
+      timestamp: new Date().toISOString(),
+      action: 'start',
+      instanceId,
+      projectId,
+      mode: 'manual',
+      status: 'success',
+      message: 'unshelve'
+    })
+    res.json(result)
+  } catch (error) {
+    logger.error('INST', 'Error unshelving instance', error)
+    actionCounter.inc({ action: 'unshelve', mode: 'manual', status: 'error' })
+    await logAction({
+      timestamp: new Date().toISOString(),
+      action: 'start',
       instanceId: req.body?.instanceId ?? 'unknown',
       projectId: req.body?.projectId ?? 'unknown',
       mode: 'manual',

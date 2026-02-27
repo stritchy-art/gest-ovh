@@ -8,7 +8,7 @@ export interface Project {
 export interface Instance {
   id: string
   name: string
-  status: 'ACTIVE' | 'BUILDING' | 'STOPPED' | 'SHUTOFF'
+  status: 'ACTIVE' | 'BUILD' | 'BUILDING' | 'STOPPED' | 'SHUTOFF' | 'SHELVED' | 'SHELVED_OFFLOADED' | 'REBOOT' | 'HARD_REBOOT' | 'RESCUE' | 'VERIFY_RESIZE' | 'MIGRATING' | 'RESIZE' | 'REBUILD' | 'PAUSED' | 'SUSPENDED' | 'ERROR' | 'DELETING'
   flavorId: string
   imageId: string
   region: string

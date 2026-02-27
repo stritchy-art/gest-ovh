@@ -18,7 +18,9 @@ interface InstanceListProps {
 
 function InstanceList({ redisAvailable = true }: InstanceListProps) {
   const { projects, loading: projectsLoading, error: projectsError } = useProjects()
-  const [projectId, setProjectId] = useState<string | null>(null)
+  const [projectId, setProjectId] = useState<string | null>(
+    () => localStorage.getItem('selectedProjectId')
+  )
   const { instances, loading: instancesLoading, error: instancesError, refetch, updateInstanceSchedule } = useInstances(projectId)
   
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null)
@@ -39,8 +41,17 @@ function InstanceList({ redisAvailable = true }: InstanceListProps) {
   useEffect(() => {
     if (projects.length > 0 && !projectId) {
       setProjectId(projects[0].id)
+    } else if (projectId && projects.length > 0 && !projects.find(p => p.id === projectId)) {
+      // Le projet sauvegardé n'existe plus, prendre le premier
+      setProjectId(projects[0].id)
     }
   }, [projects, projectId])
+
+  const handleProjectChange = (id: string | null) => {
+    setProjectId(id)
+    if (id) localStorage.setItem('selectedProjectId', id)
+    else localStorage.removeItem('selectedProjectId')
+  }
 
   // Charger la consommation quand le projet change
   useEffect(() => {
@@ -77,6 +88,18 @@ function InstanceList({ redisAvailable = true }: InstanceListProps) {
       refetch()
     } catch (err) {
       alert(`Erreur lors de l'arrêt: ${err instanceof Error ? err.message : 'Erreur inconnue'}`)
+    }
+  }
+
+  const handleUnshelveInstance = async (instance: Instance) => {
+    if (!projectId) return
+    if (!confirm(`Réactiver l'instance "${instance.name}" (unshelve) ?`)) return
+
+    try {
+      await ovhService.unshelveInstance(projectId, instance.id)
+      refetch()
+    } catch (err) {
+      alert(`Erreur lors de la réactivation: ${err instanceof Error ? err.message : 'Erreur inconnue'}`)
     }
   }
 
@@ -184,7 +207,7 @@ function InstanceList({ redisAvailable = true }: InstanceListProps) {
         <ProjectSelector
           projects={projects}
           selectedProjectId={projectId}
-          onProjectChange={setProjectId}
+          onProjectChange={handleProjectChange}
         />
 
         <InstanceFilters
@@ -368,7 +391,16 @@ function InstanceList({ redisAvailable = true }: InstanceListProps) {
                   </td>
                   <td>
                     <div className="d-flex gap-2">
-                      {instance.status === 'ACTIVE' || instance.status === 'BUILDING' ? (
+                      {instance.status === 'SHELVED' || instance.status === 'SHELVED_OFFLOADED' ? (
+                        <button
+                          onClick={() => handleUnshelveInstance(instance)}
+                          className="btn btn-sm btn-outline-info"
+                          title="Réactiver l'instance (unshelve)"
+                        >
+                          <i className="bi bi-arrow-up-circle me-1"></i>
+                          Réactiver
+                        </button>
+                      ) : instance.status === 'ACTIVE' || instance.status === 'BUILDING' ? (
                         <button
                           onClick={() => handleStopInstance(instance)}
                           className="btn btn-sm btn-outline-danger"
@@ -376,6 +408,11 @@ function InstanceList({ redisAvailable = true }: InstanceListProps) {
                         >
                           <i className="bi bi-stop-circle me-1"></i>
                           {instance.status === 'BUILDING' ? 'BUILDING' : 'Arrêter'}
+                        </button>
+                      ) : ['REBOOT', 'HARD_REBOOT', 'RESCUE', 'VERIFY_RESIZE', 'MIGRATING', 'RESIZE', 'REBUILD', 'DELETING'].includes(instance.status) ? (
+                        <button className="btn btn-sm btn-outline-warning" disabled>
+                          <i className="bi bi-hourglass-split me-1"></i>
+                          {instance.status}
                         </button>
                       ) : (
                         <button

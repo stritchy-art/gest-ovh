@@ -22,9 +22,22 @@ export function getStatusBadge(status: string): string {
   const badges: Record<string, string> = {
     'ACTIVE': 'bg-success',
     'SHUTOFF': 'bg-secondary',
+    'STOPPED': 'bg-secondary',
     'BUILDING': 'bg-warning text-dark',
+    'BUILD': 'bg-warning text-dark',
     'ERROR': 'bg-danger',
-    'PAUSED': 'bg-secondary'
+    'PAUSED': 'bg-secondary',
+    'SUSPENDED': 'bg-secondary',
+    'SHELVED': 'bg-info text-dark',
+    'SHELVED_OFFLOADED': 'bg-info text-dark',
+    'REBOOT': 'bg-warning text-dark',
+    'HARD_REBOOT': 'bg-warning text-dark',
+    'RESCUE': 'bg-warning text-dark',
+    'VERIFY_RESIZE': 'bg-warning text-dark',
+    'MIGRATING': 'bg-warning text-dark',
+    'RESIZE': 'bg-warning text-dark',
+    'REBUILD': 'bg-warning text-dark',
+    'DELETING': 'bg-danger',
   }
   return badges[status] || 'bg-secondary'
 }
